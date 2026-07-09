@@ -98,12 +98,12 @@ public final class HitboxDebugRenderer {
         boolean regActive = AhfConfig.hitRegistrationMode() != HitRegMode.OFF;
 
         if (style == Style.FILLED) {
-            VertexConsumer fillVc = buffers.getBuffer(RenderTypes.debugFilledBox());
+            VertexConsumer fillVc = buffers.getBuffer(HitboxRenderType.FILLED);
             for (LivingEntity e : targets) {
                 float rigAlpha = HitboxApi.rigPoseSupported(e) ? 1.0F : 0.4F;
                 fillRig(mat, fillVc, e, pt, rigAlpha);
             }
-            buffers.endBatch(RenderTypes.debugFilledBox());
+            buffers.endBatch(HitboxRenderType.FILLED);
         }
 
         VertexConsumer vc = buffers.getBuffer(RenderTypes.lines());
@@ -162,12 +162,8 @@ public final class HitboxDebugRenderer {
             float a = limbAlpha(obb.limb(), hl, alpha) * FILL_ALPHA;
             Vec3[] corners = cornersOf(obb, frame);
             for (int[] face : FACES) {
-                Vec3 v0 = corners[face[0]];
-                Vec3 v1 = corners[face[1]];
-                Vec3 v2 = corners[face[2]];
-                Vec3 v3 = corners[face[3]];
-                fillTri(mat, fillVc, v0, v1, v2, c[0], c[1], c[2], a);
-                fillTri(mat, fillVc, v0, v2, v3, c[0], c[1], c[2], a);
+                fillQuad(mat, fillVc, corners[face[0]], corners[face[1]], corners[face[2]], corners[face[3]],
+                        c[0], c[1], c[2], a);
             }
         }
     }
@@ -221,11 +217,12 @@ public final class HitboxDebugRenderer {
         return corners;
     }
 
-    private static void fillTri(Matrix4f mat, VertexConsumer vc, Vec3 a, Vec3 b, Vec3 c,
-                                float red, float green, float blue, float alpha) {
+    private static void fillQuad(Matrix4f mat, VertexConsumer vc, Vec3 a, Vec3 b, Vec3 c, Vec3 d,
+                                 float red, float green, float blue, float alpha) {
         vc.addVertex(mat, (float) a.x, (float) a.y, (float) a.z).setColor(red, green, blue, alpha);
         vc.addVertex(mat, (float) b.x, (float) b.y, (float) b.z).setColor(red, green, blue, alpha);
         vc.addVertex(mat, (float) c.x, (float) c.y, (float) c.z).setColor(red, green, blue, alpha);
+        vc.addVertex(mat, (float) d.x, (float) d.y, (float) d.z).setColor(red, green, blue, alpha);
     }
 
     private static int cornerIndex(int sx, int sy, int sz) {
