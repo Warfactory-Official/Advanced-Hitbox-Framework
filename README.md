@@ -1,8 +1,6 @@
 # Advanced Hitbox Framework (AHF)
 
-A standalone Minecraft library that provides server-authoritative, deterministic oriented-bounding-box (OBB) hit classification for humanoid `LivingEntity` targets. AHF computes a fully posed per-limb rig — six OBBs matching the player model's actual animation state — and classifies which body part a ray, point, or damage event strikes, including through-and-through pierce across multiple limbs. The central contract for consumers is `HitboxPart`: a six-constant enum (HEAD, TORSO, LEFT\_ARM, RIGHT\_ARM, LEFT\_LEG, RIGHT\_LEG) that AHF returns from every classification call. AHF contains **no** medical logic; damage application, trauma, armor, and any notion of "downed" are consumer responsibilities.
-
-Extracted and generalised from the WFMedical mod.
+A standalone Minecraft library that provides server-authoritative, deterministic oriented-bounding-box (OBB) hit classification for humanoid `LivingEntity` targets. AHF computes a fully posed per-limb rig. six OBBs matching the player model's actual animation state — and classifies which body part a ray, point, or damage event strikes, including through-and-through pierce across multiple limbs. The central contract for consumers is `HitboxPart`: a six-constant enum (HEAD, TORSO, LEFT\_ARM, RIGHT\_ARM, LEFT\_LEG, RIGHT\_LEG) that AHF returns from every classification call.
 
 ---
 
