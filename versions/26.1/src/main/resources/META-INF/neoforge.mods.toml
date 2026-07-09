@@ -1,0 +1,26 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "MIT"
+
+[[mods]]
+modId = "ahf"
+version = "${version}"
+displayName = "Advanced Hitbox Framework"
+description = "A Prism multi-version mod."
+
+[[dependencies.ahf]]
+modId = "neoforge"
+type = "required"
+versionRange = "[26.1.1.0-beta,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.ahf]]
+modId = "minecraft"
+type = "required"
+versionRange = "[26.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[mixins]]
+config = "ahf.mixins.json"

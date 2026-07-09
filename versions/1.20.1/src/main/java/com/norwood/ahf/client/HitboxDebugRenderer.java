@@ -1,0 +1,246 @@
+package com.norwood.ahf.client;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.norwood.ahf.Ahf;
+import com.norwood.ahf.config.AhfConfig;
+import com.norwood.ahf.config.HitRegMode;
+import com.norwood.ahf.hit.HitboxApi;
+import com.norwood.ahf.hit.HitRegistration;
+import com.norwood.ahf.hook.AhfHooks;
+import com.norwood.ahf.part.HitboxPart;
+import com.norwood.ahf.geometry.Obb;
+import com.norwood.ahf.rig.HumanoidRig;
+import com.norwood.ahf.rig.RigCache;
+import com.norwood.ahf.rig.RigTuning;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import org.joml.Matrix3f;
+import org.joml.Matrix4f;
+
+import java.util.List;
+
+@Mod.EventBusSubscriber(modid = Ahf.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
+public final class HitboxDebugRenderer {
+
+    private static final double RANGE = 32.0;
+    private static final int[][] EDGES = {
+            {0, 1}, {2, 3}, {4, 5}, {6, 7},
+            {0, 2}, {1, 3}, {4, 6}, {5, 7},
+            {0, 4}, {1, 5}, {2, 6}, {3, 7}
+    };
+    private static final int[][] FACES = {
+            {0, 2, 6, 4}, {1, 3, 7, 5},
+            {0, 4, 5, 1}, {2, 3, 7, 6},
+            {0, 1, 3, 2}, {4, 6, 7, 5}
+    };
+    private static final float FILL_ALPHA = 0.30F;
+    public static boolean enabled = false;
+
+    public enum Style {
+        EDGES,
+        FILLED
+    }
+
+    public static Style style = Style.EDGES;
+
+    private HitboxDebugRenderer() {
+    }
+
+    public static void toggle() {
+        enabled = !enabled;
+    }
+
+    public static Style cycleStyle(int dir) {
+        Style[] all = Style.values();
+        int next = Math.floorMod(style.ordinal() + dir, all.length);
+        style = all[next];
+        return style;
+    }
+
+    @SubscribeEvent
+    public static void onRenderLevel(RenderLevelStageEvent event) {
+        if (!enabled || event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return;
+        }
+        Vec3 cam = mc.gameRenderer.getMainCamera().getPosition();
+        AABB area = new AABB(cam.x - RANGE, cam.y - RANGE, cam.z - RANGE,
+                cam.x + RANGE, cam.y + RANGE, cam.z + RANGE);
+        List<LivingEntity> targets = mc.level.getEntitiesOfClass(LivingEntity.class, area,
+                e -> e instanceof Player || AhfHooks.isEnvelopeTarget(e));
+        if (targets.isEmpty()) {
+            return;
+        }
+
+        float pt = event.getPartialTick();
+        PoseStack ps = event.getPoseStack();
+        MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
+
+        ps.pushPose();
+        ps.translate(-cam.x, -cam.y, -cam.z);
+        Matrix4f mat = ps.last().pose();
+        Matrix3f nrm = ps.last().normal();
+        boolean regActive = AhfConfig.hitRegistrationMode() != HitRegMode.OFF;
+
+        if (style == Style.FILLED) {
+            VertexConsumer fillVc = buffers.getBuffer(HitboxRenderType.FILLED);
+            for (LivingEntity e : targets) {
+                float rigAlpha = HitboxApi.rigPoseSupported(e) ? 1.0F : 0.4F;
+                fillRig(mat, fillVc, e, pt, rigAlpha);
+            }
+            buffers.endBatch(HitboxRenderType.FILLED);
+        }
+
+        VertexConsumer vc = buffers.getBuffer(RenderType.lines());
+        for (LivingEntity e : targets) {
+            AABB tight = e.getBoundingBox();
+            LevelRenderer.renderLineBox(ps, vc, tight.minX, tight.minY, tight.minZ,
+                    tight.maxX, tight.maxY, tight.maxZ, 0.55F, 0.55F, 0.55F, 0.6F);
+            if (regActive) {
+                AABB env = HitRegistration.registrationBox(e);
+                LevelRenderer.renderLineBox(ps, vc, env.minX, env.minY, env.minZ,
+                        env.maxX, env.maxY, env.maxZ, 1.0F, 1.0F, 1.0F, 0.4F);
+            }
+            float rigAlpha = HitboxApi.rigPoseSupported(e) ? 1.0F : 0.4F;
+            renderRig(mat, nrm, vc, e, pt, rigAlpha);
+        }
+        ps.popPose();
+        buffers.endBatch(RenderType.lines());
+    }
+
+    private static void renderRig(Matrix4f mat, Matrix3f nrm, VertexConsumer vc, LivingEntity e, float pt, float alpha) {
+        HumanoidRig.LocalRig rig = RigCache.get(e);
+        double[] frame = frame(e, pt);
+        HitboxPart hl = RigTuning.ACTIVE ? RigTuning.highlight : null;
+        for (Obb obb : rig.all()) {
+            float[] c = colorFor(obb.limb());
+            float a = limbAlpha(obb.limb(), hl, alpha);
+            Vec3[] corners = cornersOf(obb, frame);
+            for (int[] edge : EDGES) {
+                line(mat, nrm, vc, corners[edge[0]], corners[edge[1]], c[0], c[1], c[2], a);
+            }
+        }
+    }
+
+    private static void fillRig(Matrix4f mat, VertexConsumer fillVc, LivingEntity e, float pt, float alpha) {
+        HumanoidRig.LocalRig rig = RigCache.get(e);
+        double[] frame = frame(e, pt);
+        HitboxPart hl = RigTuning.ACTIVE ? RigTuning.highlight : null;
+        for (Obb obb : rig.all()) {
+            float[] c = colorFor(obb.limb());
+            float a = limbAlpha(obb.limb(), hl, alpha) * FILL_ALPHA;
+            Vec3[] corners = cornersOf(obb, frame);
+            for (int[] face : FACES) {
+                Vec3 v0 = corners[face[0]];
+                Vec3 v1 = corners[face[1]];
+                Vec3 v2 = corners[face[2]];
+                Vec3 v3 = corners[face[3]];
+                fillTri(mat, fillVc, v0, v1, v2, c[0], c[1], c[2], a);
+                fillTri(mat, fillVc, v0, v2, v3, c[0], c[1], c[2], a);
+            }
+        }
+    }
+
+    private static double[] frame(LivingEntity e, float pt) {
+        double px = Mth.lerp(pt, e.xOld, e.getX());
+        double py = Mth.lerp(pt, e.yOld, e.getY());
+        double pz = Mth.lerp(pt, e.zOld, e.getZ());
+        double yaw = Math.toRadians(Mth.rotLerp(pt, e.yBodyRotO, e.yBodyRot));
+        double fx = -Math.sin(yaw);
+        double fz = Math.cos(yaw);
+        return new double[]{px, py, pz, fx, fz, -fz, fx};
+    }
+
+    private static float limbAlpha(HitboxPart limb, HitboxPart highlight, float alpha) {
+        if (highlight == null) {
+            return alpha;
+        }
+        return limb == highlight ? Math.min(1.0F, alpha + 0.4F) : alpha * 0.3F;
+    }
+
+    private static Vec3[] cornersOf(Obb obb, double[] frame) {
+        double px = frame[0];
+        double py = frame[1];
+        double pz = frame[2];
+        double fx = frame[3];
+        double fz = frame[4];
+        double rx = frame[5];
+        double rz = frame[6];
+        Vec3 c = obb.center();
+        Vec3 ax = obb.axisX();
+        Vec3 ay = obb.axisY();
+        Vec3 az = obb.axisZ();
+        double hx = obb.half().x;
+        double hy = obb.half().y;
+        double hz = obb.half().z;
+        Vec3[] corners = new Vec3[8];
+        for (int sx = -1; sx <= 1; sx += 2) {
+            for (int sy = -1; sy <= 1; sy += 2) {
+                for (int sz = -1; sz <= 1; sz += 2) {
+                    double lx = c.x + sx * hx * ax.x + sy * hy * ay.x + sz * hz * az.x;
+                    double ly = c.y + sx * hx * ax.y + sy * hy * ay.y + sz * hz * az.y;
+                    double lz = c.z + sx * hx * ax.z + sy * hy * ay.z + sz * hz * az.z;
+                    double wx = px + lx * rx + lz * fx;
+                    double wy = py + ly;
+                    double wz = pz + lx * rz + lz * fz;
+                    corners[cornerIndex(sx, sy, sz)] = new Vec3(wx, wy, wz);
+                }
+            }
+        }
+        return corners;
+    }
+
+    private static void fillTri(Matrix4f mat, VertexConsumer vc, Vec3 a, Vec3 b, Vec3 c,
+                                float red, float green, float blue, float alpha) {
+        vc.vertex(mat, (float) a.x, (float) a.y, (float) a.z).color(red, green, blue, alpha).endVertex();
+        vc.vertex(mat, (float) b.x, (float) b.y, (float) b.z).color(red, green, blue, alpha).endVertex();
+        vc.vertex(mat, (float) c.x, (float) c.y, (float) c.z).color(red, green, blue, alpha).endVertex();
+    }
+
+    private static int cornerIndex(int sx, int sy, int sz) {
+        return (sx > 0 ? 1 : 0) | (sy > 0 ? 2 : 0) | (sz > 0 ? 4 : 0);
+    }
+
+    private static void line(Matrix4f mat, Matrix3f nrm, VertexConsumer vc, Vec3 a, Vec3 b,
+                             float red, float green, float blue, float alpha) {
+        float dx = (float) (b.x - a.x);
+        float dy = (float) (b.y - a.y);
+        float dz = (float) (b.z - a.z);
+        float len = Mth.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len > 1.0e-6f) {
+            dx /= len;
+            dy /= len;
+            dz /= len;
+        }
+        vc.vertex(mat, (float) a.x, (float) a.y, (float) a.z).color(red, green, blue, alpha)
+                .normal(nrm, dx, dy, dz).endVertex();
+        vc.vertex(mat, (float) b.x, (float) b.y, (float) b.z).color(red, green, blue, alpha)
+                .normal(nrm, dx, dy, dz).endVertex();
+    }
+
+    private static float[] colorFor(HitboxPart limb) {
+        return switch (limb) {
+            case HEAD -> new float[]{1.0F, 0.2F, 0.2F};
+            case TORSO -> new float[]{0.2F, 1.0F, 0.3F};
+            case LEFT_ARM -> new float[]{0.2F, 0.8F, 1.0F};
+            case RIGHT_ARM -> new float[]{0.2F, 0.4F, 1.0F};
+            case LEFT_LEG -> new float[]{1.0F, 0.9F, 0.2F};
+            default -> new float[]{1.0F, 0.5F, 0.1F};
+        };
+    }
+}
