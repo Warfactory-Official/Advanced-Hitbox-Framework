@@ -23,7 +23,11 @@ public final class HitSampler {
             }
             warnUntraceable(victim, src, cat);
         }
-        return pickWeighted(src, cat, rand);
+        HitboxPart weighted = pickWeighted(src, cat, rand);
+        if (victim != null && AhfConfig.logHitDetection()) {
+            HitDetectionDebug.logRandomFallback(victim, src, cat, weighted);
+        }
+        return weighted;
     }
 
     public static List<HitboxPart> pickPierced(LivingEntity victim, DamageSource src, HitCategory cat,
@@ -35,7 +39,11 @@ public final class HitSampler {
             }
             warnUntraceable(victim, src, cat);
         }
-        return List.of(pickWeighted(src, cat, rand));
+        HitboxPart weighted = pickWeighted(src, cat, rand);
+        if (victim != null && AhfConfig.logHitDetection()) {
+            HitDetectionDebug.logRandomFallback(victim, src, cat, weighted);
+        }
+        return List.of(weighted);
     }
 
     private static void warnUntraceable(LivingEntity victim, DamageSource src, HitCategory cat) {
@@ -106,7 +114,7 @@ public final class HitSampler {
                     return 2.5F;
                 }
                 if (limb == HitboxPart.TORSO) {
-                    return 0.6F;
+                    return 0.3F;
                 }
                 return 0.0F;
             case EXPLOSION:

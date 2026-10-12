@@ -6,42 +6,56 @@ import com.norwood.ahf.rig.RigTuning;
 
 public final class AhfConfig {
 
-    private static boolean geometricHitLocation = true;
-    private static boolean poseAwareArms = true;
-    private static double headBandBottom = 0.74;
-    private static double legBandTop = 0.40;
-    private static double armSideThreshold = 0.80;
-    private static double meleeReach = 3.0;
-    private static boolean riggedLimbBoxes = true;
-    private static double limbBoxPadding = 0.02;
-    private static boolean hitboxDebug = false;
-    private static boolean gunArmPose = true;
-    private static HitRegMode hitRegistrationMode = HitRegMode.ENVELOPE;
+    private static volatile boolean geometricHitLocation = true;
+    private static volatile boolean poseAwareArms = true;
+    private static volatile double headBandBottom = 0.74;
+    private static volatile double legBandTop = 0.40;
+    private static volatile double armSideThreshold = 0.80;
+    private static volatile double meleeReach = 3.0;
+    private static volatile boolean riggedLimbBoxes = true;
+    private static volatile double limbBoxPadding = 0.02;
+    private static volatile boolean hitboxDebug = false;
+    private static volatile boolean gunArmPose = true;
+    private static volatile HitRegMode hitRegistrationMode = HitRegMode.PRECISE;
 
-    private static double envelopeReachHStanding = 0.4;
-    private static double envelopeReachVStanding = 0.2;
-    private static double envelopeReachHCrouching = 0.5;
-    private static double envelopeReachVCrouching = 0.1;
-    private static double envelopeReachHProne = 1.0;
-    private static double envelopeReachVProne = 0.3;
+    private static volatile double envelopeReachHStanding = 0.4;
+    private static volatile double envelopeReachVStanding = 0.2;
+    private static volatile double envelopeReachHCrouching = 0.5;
+    private static volatile double envelopeReachVCrouching = 0.1;
+    private static volatile double envelopeReachHProne = 1.0;
+    private static volatile double envelopeReachVProne = 0.3;
 
-    private static double stanceEnvelopeReachHorizontal = 1.0;
-    private static double stanceEnvelopeReachVertical = 0.3;
+    private static volatile double stanceEnvelopeReachHorizontal = 1.0;
+    private static volatile double stanceEnvelopeReachVertical = 0.3;
 
-    private static HitAuthority hitAuthority = HitAuthority.SERVER;
-    private static int poseStreamMinIntervalTicks = 2;
-    private static int poseStreamMaxIntervalTicks = 10;
-    private static int poseHintMaxAgeTicks = 30;
-    private static double poseHintMargin = 0.6;
+    private static volatile HitAuthority hitAuthority = HitAuthority.SERVER;
+    private static volatile int poseStreamMinIntervalTicks = 2;
+    private static volatile int poseStreamMaxIntervalTicks = 10;
+    private static volatile int poseHintMaxAgeTicks = 30;
+    private static volatile double poseHintMargin = 0.6;
 
-    private static boolean penetrationEnabled = false;
-    private static double penetrationBudget = 1.0;
-    private static double penetrationEnergyFalloff = 0.5;
+    private static volatile boolean penetrationEnabled = false;
+    private static volatile double penetrationBudget = 1.0;
+    private static volatile double penetrationEnergyFalloff = 0.5;
 
-    private static double penResistHead = 0.5;
-    private static double penResistTorso = 0.8;
-    private static double penResistArm = 0.25;
-    private static double penResistLeg = 0.4;
+    private static volatile double penResistHead = 0.5;
+    private static volatile double penResistTorso = 0.8;
+    private static volatile double penResistArm = 0.25;
+    private static volatile double penResistLeg = 0.4;
+
+    private static volatile double hitGapRejectTolerance = 0.2;
+    private static volatile boolean animatedHitboxes = false;
+    private static volatile double poseStreamChangeEpsilon = 2.0e-4;
+    private static volatile boolean logHitDetection = false;
+
+    private static volatile boolean lagCompensation = true;
+    private static volatile int lagCompMaxRewindTicks = 10;
+    private static volatile int lagCompInterpTicks = 3;
+    private static volatile int lagCompSlackTicks = 2;
+    private static volatile double lagCompNonPlayerRange = 128.0;
+    private static volatile int rttProbeIntervalTicks = 20;
+    private static volatile int rttWindowSamples = 10;
+
 
     private AhfConfig() {
     }
@@ -50,7 +64,7 @@ public final class AhfConfig {
         return geometricHitLocation;
     }
 
-    public static void setGeometricHitLocation(boolean v) {
+    static void setGeometricHitLocation(boolean v) {
         geometricHitLocation = v;
     }
 
@@ -58,7 +72,7 @@ public final class AhfConfig {
         return poseAwareArms;
     }
 
-    public static void setPoseAwareArms(boolean v) {
+    static void setPoseAwareArms(boolean v) {
         poseAwareArms = v;
     }
 
@@ -66,7 +80,7 @@ public final class AhfConfig {
         return headBandBottom;
     }
 
-    public static void setHeadBandBottom(double v) {
+    static void setHeadBandBottom(double v) {
         headBandBottom = v;
     }
 
@@ -74,7 +88,7 @@ public final class AhfConfig {
         return legBandTop;
     }
 
-    public static void setLegBandTop(double v) {
+    static void setLegBandTop(double v) {
         legBandTop = v;
     }
 
@@ -82,7 +96,7 @@ public final class AhfConfig {
         return armSideThreshold;
     }
 
-    public static void setArmSideThreshold(double v) {
+    static void setArmSideThreshold(double v) {
         armSideThreshold = v;
     }
 
@@ -90,7 +104,7 @@ public final class AhfConfig {
         return meleeReach;
     }
 
-    public static void setMeleeReach(double v) {
+    static void setMeleeReach(double v) {
         meleeReach = v;
     }
 
@@ -98,7 +112,7 @@ public final class AhfConfig {
         return riggedLimbBoxes;
     }
 
-    public static void setRiggedLimbBoxes(boolean v) {
+    static void setRiggedLimbBoxes(boolean v) {
         riggedLimbBoxes = v;
     }
 
@@ -106,7 +120,7 @@ public final class AhfConfig {
         return limbBoxPadding;
     }
 
-    public static void setLimbBoxPadding(double v) {
+    static void setLimbBoxPadding(double v) {
         limbBoxPadding = v;
     }
 
@@ -114,7 +128,7 @@ public final class AhfConfig {
         return hitboxDebug;
     }
 
-    public static void setHitboxDebug(boolean v) {
+    static void setHitboxDebug(boolean v) {
         hitboxDebug = v;
     }
 
@@ -122,7 +136,7 @@ public final class AhfConfig {
         return gunArmPose;
     }
 
-    public static void setGunArmPose(boolean v) {
+    static void setGunArmPose(boolean v) {
         gunArmPose = v;
     }
 
@@ -130,7 +144,7 @@ public final class AhfConfig {
         return hitRegistrationMode;
     }
 
-    public static void setHitRegistrationMode(HitRegMode v) {
+    static void setHitRegistrationMode(HitRegMode v) {
         hitRegistrationMode = v;
     }
 
@@ -142,7 +156,7 @@ public final class AhfConfig {
         };
     }
 
-    public static void setHitEnvelopeReachHorizontal(RigTuning.RigPose pose, double v) {
+    static void setHitEnvelopeReachHorizontal(RigTuning.RigPose pose, double v) {
         switch (pose) {
             case STANDING -> envelopeReachHStanding = v;
             case CROUCHING -> envelopeReachHCrouching = v;
@@ -158,7 +172,7 @@ public final class AhfConfig {
         };
     }
 
-    public static void setHitEnvelopeReachVertical(RigTuning.RigPose pose, double v) {
+    static void setHitEnvelopeReachVertical(RigTuning.RigPose pose, double v) {
         switch (pose) {
             case STANDING -> envelopeReachVStanding = v;
             case CROUCHING -> envelopeReachVCrouching = v;
@@ -170,7 +184,7 @@ public final class AhfConfig {
         return stanceEnvelopeReachHorizontal;
     }
 
-    public static void setStanceEnvelopeReachHorizontal(double v) {
+    static void setStanceEnvelopeReachHorizontal(double v) {
         stanceEnvelopeReachHorizontal = v;
     }
 
@@ -178,7 +192,7 @@ public final class AhfConfig {
         return stanceEnvelopeReachVertical;
     }
 
-    public static void setStanceEnvelopeReachVertical(double v) {
+    static void setStanceEnvelopeReachVertical(double v) {
         stanceEnvelopeReachVertical = v;
     }
 
@@ -195,7 +209,7 @@ public final class AhfConfig {
         return hitAuthority;
     }
 
-    public static void setHitAuthority(HitAuthority v) {
+    static void setHitAuthority(HitAuthority v) {
         hitAuthority = v;
     }
 
@@ -203,7 +217,7 @@ public final class AhfConfig {
         return poseStreamMinIntervalTicks;
     }
 
-    public static void setPoseStreamMinIntervalTicks(int v) {
+    static void setPoseStreamMinIntervalTicks(int v) {
         poseStreamMinIntervalTicks = v;
     }
 
@@ -211,7 +225,7 @@ public final class AhfConfig {
         return poseStreamMaxIntervalTicks;
     }
 
-    public static void setPoseStreamMaxIntervalTicks(int v) {
+    static void setPoseStreamMaxIntervalTicks(int v) {
         poseStreamMaxIntervalTicks = v;
     }
 
@@ -219,7 +233,7 @@ public final class AhfConfig {
         return poseHintMaxAgeTicks;
     }
 
-    public static void setPoseHintMaxAgeTicks(int v) {
+    static void setPoseHintMaxAgeTicks(int v) {
         poseHintMaxAgeTicks = v;
     }
 
@@ -227,7 +241,7 @@ public final class AhfConfig {
         return poseHintMargin;
     }
 
-    public static void setPoseHintMargin(double v) {
+    static void setPoseHintMargin(double v) {
         poseHintMargin = v;
     }
 
@@ -235,7 +249,7 @@ public final class AhfConfig {
         return penetrationEnabled;
     }
 
-    public static void setPenetrationEnabled(boolean v) {
+    static void setPenetrationEnabled(boolean v) {
         penetrationEnabled = v;
     }
 
@@ -243,7 +257,7 @@ public final class AhfConfig {
         return penetrationBudget;
     }
 
-    public static void setPenetrationBudget(double v) {
+    static void setPenetrationBudget(double v) {
         penetrationBudget = v;
     }
 
@@ -251,7 +265,7 @@ public final class AhfConfig {
         return penetrationEnergyFalloff;
     }
 
-    public static void setPenetrationEnergyFalloff(double v) {
+    static void setPenetrationEnergyFalloff(double v) {
         penetrationEnergyFalloff = v;
     }
 
@@ -265,19 +279,115 @@ public final class AhfConfig {
         return lt.isLeg() ? penResistLeg : penResistArm;
     }
 
-    public static void setPenResistHead(double v) {
+    static void setPenResistHead(double v) {
         penResistHead = v;
     }
 
-    public static void setPenResistTorso(double v) {
+    static void setPenResistTorso(double v) {
         penResistTorso = v;
     }
 
-    public static void setPenResistArm(double v) {
+    static void setPenResistArm(double v) {
         penResistArm = v;
     }
 
-    public static void setPenResistLeg(double v) {
+    static void setPenResistLeg(double v) {
         penResistLeg = v;
+    }
+
+    public static double hitGapRejectTolerance() {
+        return hitGapRejectTolerance;
+    }
+
+    static void setHitGapRejectTolerance(double v) {
+        hitGapRejectTolerance = v;
+    }
+
+    public static boolean animatedHitboxes() {
+        return animatedHitboxes;
+    }
+
+    static void setAnimatedHitboxes(boolean v) {
+        animatedHitboxes = v;
+    }
+
+    public static boolean useClientPose() {
+        return hitAuthority == HitAuthority.CLIENT_HINT || animatedHitboxes;
+    }
+
+    public static double poseStreamChangeEpsilon() {
+        return poseStreamChangeEpsilon;
+    }
+
+    static void setPoseStreamChangeEpsilon(double v) {
+        poseStreamChangeEpsilon = v;
+    }
+
+    public static boolean logHitDetection() {
+        return logHitDetection;
+    }
+
+    static void setLogHitDetection(boolean v) {
+        logHitDetection = v;
+    }
+
+    public static boolean lagCompensation() {
+        return lagCompensation;
+    }
+
+    static void setLagCompensation(boolean v) {
+        lagCompensation = v;
+    }
+
+    public static int lagCompMaxRewindTicks() {
+        return lagCompMaxRewindTicks;
+    }
+
+    static void setLagCompMaxRewindTicks(int v) {
+        lagCompMaxRewindTicks = v;
+    }
+
+    public static int lagCompInterpTicks() {
+        return lagCompInterpTicks;
+    }
+
+    static void setLagCompInterpTicks(int v) {
+        lagCompInterpTicks = v;
+    }
+
+    public static int lagCompSlackTicks() {
+        return lagCompSlackTicks;
+    }
+
+    static void setLagCompSlackTicks(int v) {
+        lagCompSlackTicks = v;
+    }
+
+    public static int lagCompHistoryDepth() {
+        return lagCompMaxRewindTicks + lagCompInterpTicks + 1;
+    }
+
+    public static double lagCompNonPlayerRange() {
+        return lagCompNonPlayerRange;
+    }
+
+    static void setLagCompNonPlayerRange(double v) {
+        lagCompNonPlayerRange = v;
+    }
+
+    public static int rttProbeIntervalTicks() {
+        return rttProbeIntervalTicks;
+    }
+
+    static void setRttProbeIntervalTicks(int v) {
+        rttProbeIntervalTicks = v;
+    }
+
+    public static int rttWindowSamples() {
+        return rttWindowSamples;
+    }
+
+    static void setRttWindowSamples(int v) {
+        rttWindowSamples = v;
     }
 }

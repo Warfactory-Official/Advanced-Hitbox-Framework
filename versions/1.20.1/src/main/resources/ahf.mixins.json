@@ -2,9 +2,23 @@
   "required": true,
   "minVersion": "0.8",
   "package": "com.norwood.ahf.mixin",
-  "compatibilityLevel": "JAVA_21",
-  "mixins": [],
-  "client": [],
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "ahf.refmap.json",
+  "mixins": [
+    "EntityEyeMixin",
+    "EntityTeleportMixin",
+    "PlayerInvoker",
+    "PlayerStanceMixin",
+    "PlayerTeleportMixin",
+    "ProjectileUtilMixin",
+    "ServerLevelAccessor",
+    "WalkAnimationAccess"
+  ],
+  "client": [
+    "CameraMixin",
+    "HumanoidArmorLayerMixin",
+    "PlayerModelMixin"
+  ],
   "server": [],
   "injectors": {
     "defaultRequire": 1

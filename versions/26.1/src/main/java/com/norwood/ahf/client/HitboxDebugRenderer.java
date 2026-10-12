@@ -17,6 +17,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
@@ -81,8 +82,9 @@ public final class HitboxDebugRenderer {
                 event.getLevelRenderState().cameraRenderState.pos.z);
         AABB area = new AABB(cam.x - RANGE, cam.y - RANGE, cam.z - RANGE,
                 cam.x + RANGE, cam.y + RANGE, cam.z + RANGE);
+        Entity self = mc.options.getCameraType().isFirstPerson() ? mc.getCameraEntity() : null;
         List<LivingEntity> targets = mc.level.getEntitiesOfClass(LivingEntity.class, area,
-                e -> e instanceof Player || AhfHooks.isEnvelopeTarget(e));
+                e -> e != self && (e instanceof Player || AhfHooks.isEnvelopeTarget(e)));
         if (targets.isEmpty()) {
             return;
         }

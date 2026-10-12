@@ -3,7 +3,7 @@ package com.norwood.ahf.network;
 import com.norwood.ahf.client.PoseStreamClient;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 
 public record HitAuthorityPacket(boolean streamPose) {
 
@@ -11,12 +11,13 @@ public record HitAuthorityPacket(boolean streamPose) {
         return new HitAuthorityPacket(buf.readBoolean());
     }
 
-    public void encode(FriendlyByteBuf buf) {
-        buf.writeBoolean(streamPose);
+    public static void encode(FriendlyByteBuf buf, HitAuthorityPacket packet) {
+        buf.writeBoolean(packet.streamPose);
     }
 
     public void handleClient() {
-        DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
-                () -> () -> PoseStreamClient.setEnabled(streamPose));
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            PoseStreamClient.setEnabled(streamPose);
+        }
     }
 }

@@ -4,6 +4,8 @@ import com.norwood.ahf.config.AhfConfig;
 import com.norwood.ahf.config.HitRegMode;
 import com.norwood.ahf.geometry.Obb;
 import com.norwood.ahf.hook.AhfHooks;
+import com.norwood.ahf.lagcomp.EntityHistory;
+import com.norwood.ahf.lagcomp.Snapshot;
 import com.norwood.ahf.part.HitboxPart;
 import com.norwood.ahf.rig.HumanoidRig;
 import com.norwood.ahf.rig.RigCache;
@@ -31,33 +33,67 @@ public final class HitboxApi {
     private static final double HITSCAN_RANGE = 64.0;
     private static final double TRACE_MARGIN = 1.0;
     private static final double UPPER_ARM_LOW = 0.55;
+    /** Ray-cast limit, segment lengths. Derived segments (vanilla projectile, eye + reach) => unbounded: end is a guess. */
+    private static final double SEGMENT = 1.0;
+    /** != +inf: {@link Obb#rayEntry} miss = +inf. */
+    private static final double UNBOUNDED = Double.MAX_VALUE;
 
     private HitboxApi() {
     }
 
     public static @Nullable HitboxPart classifyHit(LivingEntity victim, DamageSource src, HitCategory cat) {
+        if (src instanceof AhfHitSource h) {
+            if (h.hitPart() != null) {
+                return h.hitPart();
+            }
+            RayHit r = classifyRay(victim, h.hitFrom(), h.hitTo(), h.hitGameTime());
+            return r == null ? null : r.part();
+        }
         if (victim instanceof Player && AhfConfig.riggedLimbBoxes() && rigUsable(victim)) {
             HitboxPart rigLimb = classifyRig(victim, src, cat);
             if (rigLimb != null) {
+                if (AhfConfig.logHitDetection()) {
+                    HitDetectionDebug.logClassifyHit(victim, src, cat, "RIG", rigLimb);
+                }
                 return rigLimb;
             }
         }
         Vec3 hit = resolveHitPoint(victim, src, cat);
-        return hit == null ? null : classifyLocal(victim, hit);
+        HitboxPart result = hit == null ? null : classifyLocal(victim, hit);
+        if (AhfConfig.logHitDetection()) {
+            HitDetectionDebug.logClassifyHit(victim, src, cat, hit == null ? "NO_HIT_POINT" : "BANDED_FALLBACK",
+                    result);
+        }
+        return result;
     }
 
     public static List<HitboxPart> classifyHitPierced(LivingEntity victim, DamageSource src, HitCategory cat) {
+        if (src instanceof AhfHitSource h) {
+            if (h.hitPart() != null) {
+                return List.of(h.hitPart());
+            }
+            return parts(classifyRayPierced(victim, h.hitFrom(), h.hitTo(), h.hitGameTime()));
+        }
         if (victim instanceof Player && AhfConfig.riggedLimbBoxes() && rigUsable(victim)) {
             Vec3[] seg = attackSegment(victim, src, cat);
             if (seg != null) {
-                List<HitboxPart> pierced = rigRayPierce(victim, seg[0], seg[1]);
+                List<RayHit> pierced = rigRayPierce(victim.position(), victim.yBodyRot, RigCache.resolve(victim),
+                        seg[0], seg[1], UNBOUNDED);
                 if (!pierced.isEmpty()) {
-                    return pierced;
+                    return parts(pierced);
                 }
             }
         }
         HitboxPart single = classifyHit(victim, src, cat);
         return single == null ? List.of() : List.of(single);
+    }
+
+    private static List<HitboxPart> parts(List<RayHit> hits) {
+        List<HitboxPart> out = new ArrayList<>(hits.size());
+        for (RayHit h : hits) {
+            out.add(h.part());
+        }
+        return out;
     }
 
     private static @Nullable HitboxPart classifyRig(LivingEntity victim, DamageSource src, HitCategory cat) {
@@ -76,26 +112,22 @@ public final class HitboxApi {
                 dir = victim.position().subtract(to);
             }
             if (dir.lengthSqr() < 1.0e-8) {
-                return rigPointPick(victim, nearestPointOnBox(box, to));
+                return rigPointPick(victim, nearestPointOnBox(box, to), src, "PROJECTILE_DEGENERATE");
             }
             Vec3 d = dir.normalize();
-            return rigRayPick(victim, from.subtract(d.scale(TRACE_MARGIN)), to.add(d.scale(TRACE_MARGIN)));
+            return part(rigRayPick(victim.position(), victim.yBodyRot, RigCache.resolve(victim),
+                    from.subtract(d.scale(TRACE_MARGIN)), to.add(d.scale(TRACE_MARGIN)), UNBOUNDED));
         }
 
         if (attacker instanceof LivingEntity shooter && attacker != victim) {
             boolean ballistic = (cat == HitCategory.BALLISTIC);
             boolean melee = (direct == attacker);
             if (ballistic || melee) {
-                if (ballistic) {
-                    Optional<Vec3> tacz = AhfHooks.bulletHitPos(src);
-                    if (tacz.isPresent()) {
-                        return rigPointPick(victim, tacz.get());
-                    }
-                }
                 Vec3 eye = shooter.getEyePosition();
                 Vec3 look = shooter.getViewVector(1.0F);
                 double range = ballistic ? HITSCAN_RANGE : AhfConfig.meleeReach();
-                return rigRayPick(victim, eye, eye.add(look.scale(range)));
+                return part(rigRayPick(victim.position(), victim.yBodyRot, RigCache.resolve(victim), eye,
+                        eye.add(look.scale(range)), UNBOUNDED));
             }
         }
 
@@ -103,15 +135,23 @@ public final class HitboxApi {
         if (srcPos != null) {
             Vec3 centre = box.getCenter();
             Vec3 entry = box.clip(srcPos, centre).orElse(centre);
-            return rigPointPick(victim, entry);
+            return rigPointPick(victim, entry, src, "SRC_POS_FALLBACK");
         }
 
         return null;
     }
 
+    private static @Nullable HitboxPart part(@Nullable RayHit hit) {
+        return hit == null ? null : hit.part();
+    }
+
     public static boolean isGapShot(LivingEntity victim, DamageSource src, HitCategory cat) {
         if (src == null || !(victim instanceof Player) && !HitRegistration.isEnvelopeTarget(victim)) {
             return false;
+        }
+        double pad = AhfConfig.hitGapRejectTolerance();
+        if (src instanceof AhfHitSource h) {
+            return h.hitPart() == null && !rayHitsWithin(victim, h.hitFrom(), h.hitTo(), h.hitGameTime(), pad);
         }
         if (!rigPoseSupported(victim)) {
             return false;
@@ -120,8 +160,22 @@ public final class HitboxApi {
         if (seg == null) {
             return false;
         }
+        return !rigRayHitsWithin(victim.position(), victim.yBodyRot, RigCache.resolve(victim), seg[0], seg[1], pad,
+                UNBOUNDED);
+    }
 
-        return rigRayPick(victim, seg[0], seg[1]) == null;
+    /**
+     * Segment passes within {@code pad} of a limb box of {@code victim} as broadcast in tick {@code gameTime}
+     * (snapshot rig; live without snapshot). No usable rig => true (cannot tell a gap).
+     */
+    public static boolean rayHitsWithin(LivingEntity victim, Vec3 from, Vec3 to, long gameTime, double pad) {
+        Snapshot s = EntityHistory.snapshot(victim, gameTime);
+        if (s == null) {
+            return !rigPoseSupported(victim)
+                    || rigRayHitsWithin(victim.position(), victim.yBodyRot, RigCache.resolve(victim), from, to, pad,
+                    SEGMENT);
+        }
+        return s.rig() == null || rigRayHitsWithin(s.pos(), s.bodyYaw(), s.rig(), from, to, pad, SEGMENT);
     }
 
     public static boolean shouldRejectGap(LivingEntity victim, DamageSource src, HitCategory cat) {
@@ -172,9 +226,6 @@ public final class HitboxApi {
             boolean ballistic = (cat == HitCategory.BALLISTIC);
             boolean melee = (direct == attacker);
             if (ballistic || melee) {
-                if (ballistic && AhfHooks.bulletHitPos(src).isPresent()) {
-                    return null;
-                }
                 Vec3 eye = shooter.getEyePosition();
                 Vec3 look = shooter.getViewVector(1.0F);
                 double range = ballistic ? HITSCAN_RANGE : AhfConfig.meleeReach();
@@ -186,6 +237,10 @@ public final class HitboxApi {
 
     public static @Nullable Vec3 resolveHitPoint(LivingEntity victim, DamageSource src, HitCategory cat) {
         AABB box = victim.getBoundingBox();
+        if (src instanceof AhfHitSource h) {
+            RayHit r = classifyRay(victim, h.hitFrom(), h.hitTo(), h.hitGameTime());
+            return r != null ? r.point(h.hitFrom(), h.hitTo()) : nearestPointOnBox(box, h.hitTo());
+        }
         var direct = src.getDirectEntity();
         var attacker = src.getEntity();
 
@@ -212,12 +267,6 @@ public final class HitboxApi {
             boolean ballistic = (cat == HitCategory.BALLISTIC);
             boolean melee = (direct == attacker);
             if (ballistic || melee) {
-                if (ballistic) {
-                    Optional<Vec3> tacz = AhfHooks.bulletHitPos(src);
-                    if (tacz.isPresent()) {
-                        return tacz.get();
-                    }
-                }
                 Vec3 eye = shooter.getEyePosition();
                 Vec3 look = shooter.getViewVector(1.0F);
                 double range = ballistic ? HITSCAN_RANGE : AhfConfig.meleeReach();
@@ -236,18 +285,107 @@ public final class HitboxApi {
         return null;
     }
 
-    public static @Nullable HitboxPart classifyRay(LivingEntity victim, Vec3 from, Vec3 to) {
+    /**
+     * Part struck by the segment {@code from -> to} (world space). Rig: first limb box entered, else nearest part to
+     * the segment's entry into the registration box; PRECISE rejects that fallback unless a limb box lies within
+     * {@code hitGapRejectTolerance}. No rig: banded part at the bounding-box entry. Null on miss.
+     */
+    public static @Nullable RayHit classifyRay(LivingEntity victim, Vec3 from, Vec3 to) {
         if (victim instanceof Player && AhfConfig.riggedLimbBoxes() && rigUsable(victim)) {
-            HitboxPart rigLimb = rigRayPick(victim, from, to);
-            if (rigLimb != null) {
-                return rigLimb;
-            }
+            return rigSegment(victim, victim.position(), victim.yBodyRot, RigCache.resolve(victim),
+                    HitRegistration.registrationBox(victim), from, to);
         }
-        Optional<Vec3> hit = victim.getBoundingBox().clip(from, to);
-        return hit.map(v -> classifyLocal(victim, v)).orElse(null);
+        return bandedSegment(victim, victim.getBoundingBox(), victim.yBodyRot, isUprightHumanoid(victim),
+                isAimingWeapon(victim), from, to);
     }
 
-    private static boolean rigUsable(LivingEntity victim) {
+    /**
+     * {@link #classifyRay} against {@code victim} as broadcast in tick {@code gameTime}
+     * ({@link EntityHistory#snapshot}): rig, position, body yaw, boxes and banded flags from the snapshot.
+     * No snapshot => live.
+     */
+    public static @Nullable RayHit classifyRay(LivingEntity victim, Vec3 from, Vec3 to, long gameTime) {
+        Snapshot s = EntityHistory.snapshot(victim, gameTime);
+        return s == null ? classifyRay(victim, from, to) : classifyRay(victim, from, to, s);
+    }
+
+    /** {@link #classifyRay(LivingEntity, Vec3, Vec3, long)} against a snapshot already looked up. */
+    public static @Nullable RayHit classifyRay(LivingEntity victim, Vec3 from, Vec3 to, Snapshot s) {
+        if (s.rig() != null) {
+            return rigSegment(victim, s.pos(), s.bodyYaw(), s.rig(), s.envelope(), from, to);
+        }
+        return bandedSegment(victim, s.box(), s.bodyYaw(), s.upright(), s.aiming(), from, to);
+    }
+
+    private static @Nullable RayHit rigSegment(LivingEntity victim, Vec3 pos, float yaw, HumanoidRig.LocalRig rig,
+                                               AABB envelope, Vec3 from, Vec3 to) {
+        RayHit limb = rigRayPick(pos, yaw, rig, from, to, SEGMENT);
+        if (limb != null) {
+            return limb;
+        }
+        Vec3 entry = envelope.contains(from) ? from : envelope.clip(from, to).orElse(null);
+        if (entry == null) {
+            return null;
+        }
+        if (AhfConfig.hitRegistrationMode() == HitRegMode.PRECISE
+                && !rigRayHitsWithin(pos, yaw, rig, from, to, AhfConfig.hitGapRejectTolerance(), SEGMENT)) {
+            return null;
+        }
+        return new RayHit(rigPointPick(victim, pos, yaw, rig, entry, null, "SEGMENT_ENVELOPE"),
+                fraction(from, to, entry), false);
+    }
+
+    private static @Nullable RayHit bandedSegment(LivingEntity victim, AABB box, float yaw, boolean upright,
+                                                  boolean aiming, Vec3 from, Vec3 to) {
+        Vec3 hit = box.contains(from) ? from : box.clip(from, to).orElse(null);
+        if (hit == null) {
+            return null;
+        }
+        HitboxPart part = classifyLocal(victim, box, yaw, upright, aiming, hit);
+        return part == null ? null : new RayHit(part, fraction(from, to, hit), false);
+    }
+
+    private static double fraction(Vec3 from, Vec3 to, Vec3 p) {
+        double len2 = to.distanceToSqr(from);
+        return len2 == 0.0 ? 0.0 : Math.sqrt(p.distanceToSqr(from) / len2);
+    }
+
+    /**
+     * Parts along {@code from -> to} in entry order, cut once {@link AhfConfig#penetrationBudget} is spent.
+     * Falls back to the single {@link #classifyRay} hit; empty on miss. Callers gate on
+     * {@link AhfConfig#penetrationEnabled}.
+     */
+    public static List<RayHit> classifyRayPierced(LivingEntity victim, Vec3 from, Vec3 to) {
+        if (victim instanceof Player && AhfConfig.riggedLimbBoxes() && rigUsable(victim)) {
+            List<RayHit> pierced = rigRayPierce(victim.position(), victim.yBodyRot, RigCache.resolve(victim),
+                    from, to, SEGMENT);
+            if (!pierced.isEmpty()) {
+                return pierced;
+            }
+        }
+        RayHit single = classifyRay(victim, from, to);
+        return single == null ? List.of() : List.of(single);
+    }
+
+    /** {@link #classifyRayPierced} at tick {@code gameTime}; see {@link #classifyRay(LivingEntity, Vec3, Vec3, long)}. */
+    public static List<RayHit> classifyRayPierced(LivingEntity victim, Vec3 from, Vec3 to, long gameTime) {
+        Snapshot s = EntityHistory.snapshot(victim, gameTime);
+        return s == null ? classifyRayPierced(victim, from, to) : classifyRayPierced(victim, from, to, s);
+    }
+
+    /** {@link #classifyRayPierced(LivingEntity, Vec3, Vec3, long)} against a snapshot already looked up. */
+    public static List<RayHit> classifyRayPierced(LivingEntity victim, Vec3 from, Vec3 to, Snapshot s) {
+        if (s.rig() != null) {
+            List<RayHit> pierced = rigRayPierce(s.pos(), s.bodyYaw(), s.rig(), from, to, SEGMENT);
+            if (!pierced.isEmpty()) {
+                return pierced;
+            }
+        }
+        RayHit single = classifyRay(victim, from, to, s);
+        return single == null ? List.of() : List.of(single);
+    }
+
+    public static boolean rigUsable(LivingEntity victim) {
         if (!rigPoseSupported(victim)) {
             return false;
         }
@@ -291,41 +429,58 @@ public final class HitboxApi {
                 && pose != Pose.DYING && pose != Pose.SPIN_ATTACK;
     }
 
-    private static @Nullable HitboxPart rigRayPick(LivingEntity victim, Vec3 from, Vec3 to) {
+    /** Entry at {@code t > tMax} (segment lengths) is a miss. */
+    private static @Nullable RayHit rigRayPick(Vec3 pos, float yaw, HumanoidRig.LocalRig rig, Vec3 from, Vec3 to,
+                                               double tMax) {
         Vec3 dir = to.subtract(from);
         if (dir.lengthSqr() < 1.0e-12) {
             return null;
         }
-        Vec3 origin = worldToLocalPoint(victim, from);
-        Vec3 localDir = worldToLocalDir(victim, dir);
-        HumanoidRig.LocalRig rig = RigCache.resolve(victim);
+        Vec3 origin = worldToLocalPoint(pos, yaw, from);
+        Vec3 localDir = worldToLocalDir(yaw, dir);
         double best = Double.POSITIVE_INFINITY;
         HitboxPart limb = null;
         for (Obb obb : rig.all()) {
             double t = obb.rayEntry(origin, localDir);
-            if (t < best) {
+            if (t < best && t <= tMax) {
                 best = t;
                 limb = obb.limb();
             }
         }
-        return best == Double.POSITIVE_INFINITY ? null : limb;
+        return limb == null ? null : new RayHit(limb, best, true);
     }
 
-    private static List<HitboxPart> rigRayPierce(LivingEntity victim, Vec3 from, Vec3 to) {
+    private static boolean rigRayHitsWithin(Vec3 pos, float yaw, HumanoidRig.LocalRig rig, Vec3 from, Vec3 to,
+                                            double pad, double tMax) {
+        Vec3 dir = to.subtract(from);
+        if (dir.lengthSqr() < 1.0e-12) {
+            return false;
+        }
+        Vec3 origin = worldToLocalPoint(pos, yaw, from);
+        Vec3 localDir = worldToLocalDir(yaw, dir);
+        for (Obb obb : rig.all()) {
+            if (obb.rayEntry(origin, localDir, pad) <= tMax) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<RayHit> rigRayPierce(Vec3 pos, float yaw, HumanoidRig.LocalRig rig, Vec3 from, Vec3 to,
+                                             double tMax) {
         Vec3 dir = to.subtract(from);
         if (dir.lengthSqr() < 1.0e-12) {
             return List.of();
         }
-        Vec3 origin = worldToLocalPoint(victim, from);
-        Vec3 localDir = worldToLocalDir(victim, dir);
-        HumanoidRig.LocalRig rig = RigCache.resolve(victim);
+        Vec3 origin = worldToLocalPoint(pos, yaw, from);
+        Vec3 localDir = worldToLocalDir(yaw, dir);
         Obb[] all = rig.all();
         double[] ts = new double[all.length];
         HitboxPart[] limbs = new HitboxPart[all.length];
         int n = 0;
         for (Obb obb : all) {
             double t = obb.rayEntry(origin, localDir);
-            if (t != Double.POSITIVE_INFINITY) {
+            if (t <= tMax) {
                 ts[n] = t;
                 limbs[n] = obb.limb();
                 n++;
@@ -346,10 +501,14 @@ public final class HitboxApi {
             ts[j + 1] = tk;
             limbs[j + 1] = lk;
         }
-        List<HitboxPart> out = new ArrayList<>(n);
+        List<RayHit> out = new ArrayList<>(n);
         double budget = AhfConfig.penetrationBudget();
         for (int i = 0; i < n; i++) {
-            out.add(limbs[i]);
+            // Halves of one bent part (upper arm / forearm, ...) entered back to back = one part.
+            if (i > 0 && limbs[i] == limbs[i - 1]) {
+                continue;
+            }
+            out.add(new RayHit(limbs[i], ts[i], true));
             budget -= AhfConfig.penetrationResistance(limbs[i]);
             if (budget <= 0.0) {
                 break;
@@ -358,9 +517,15 @@ public final class HitboxApi {
         return out;
     }
 
-    private static HitboxPart rigPointPick(LivingEntity victim, Vec3 worldPoint) {
-        Vec3 local = worldToLocalPoint(victim, worldPoint);
-        HumanoidRig.LocalRig rig = RigCache.resolve(victim);
+    private static HitboxPart rigPointPick(LivingEntity victim, Vec3 worldPoint, @Nullable DamageSource src,
+                                           String branch) {
+        return rigPointPick(victim, victim.position(), victim.yBodyRot, RigCache.resolve(victim), worldPoint, src,
+                branch);
+    }
+
+    private static HitboxPart rigPointPick(LivingEntity victim, Vec3 pos, float yaw, HumanoidRig.LocalRig rig,
+                                           Vec3 worldPoint, @Nullable DamageSource src, String branch) {
+        Vec3 local = worldToLocalPoint(pos, yaw, worldPoint);
         double best = Double.POSITIVE_INFINITY;
         HitboxPart limb = HitboxPart.TORSO;
         for (Obb obb : rig.all()) {
@@ -370,42 +535,42 @@ public final class HitboxApi {
                 limb = obb.limb();
             }
         }
+        if (AhfConfig.logHitDetection()) {
+            HitDetectionDebug.logRigPointPick(victim, src, branch, rig, local, limb);
+        }
         return limb;
     }
 
-    private static Vec3 worldToLocalPoint(LivingEntity victim, Vec3 world) {
-        double yaw = Math.toRadians(victim.yBodyRot);
+    private static Vec3 worldToLocalPoint(Vec3 pos, float yawDeg, Vec3 world) {
+        double yaw = Math.toRadians(yawDeg);
         Vec3 front = new Vec3(-Math.sin(yaw), 0.0, Math.cos(yaw));
         Vec3 right = new Vec3(-front.z, 0.0, front.x);
-        Vec3 off = world.subtract(victim.position());
+        Vec3 off = world.subtract(pos);
         return new Vec3(off.dot(right), off.y, off.dot(front));
     }
 
-    private static Vec3 worldToLocalDir(LivingEntity victim, Vec3 dir) {
-        double yaw = Math.toRadians(victim.yBodyRot);
+    private static Vec3 worldToLocalDir(float yawDeg, Vec3 dir) {
+        double yaw = Math.toRadians(yawDeg);
         Vec3 front = new Vec3(-Math.sin(yaw), 0.0, Math.cos(yaw));
         Vec3 right = new Vec3(-front.z, 0.0, front.x);
         return new Vec3(dir.dot(right), dir.y, dir.dot(front));
     }
 
     public static @Nullable HitboxPart classifyLocal(LivingEntity victim, Vec3 worldHit) {
-        AABB box = victim.getBoundingBox();
+        return classifyLocal(victim, victim.getBoundingBox(), victim.yBodyRot, isUprightHumanoid(victim),
+                isAimingWeapon(victim), worldHit);
+    }
 
-        com.norwood.ahf.stance.Stance active = AhfStances.active(victim);
-        if (active != null && !active.upright()) {
-            return null;
-        }
-        if (box.getYsize() < box.getXsize()) {
-            return null;
-        }
-        if (!isUprightHumanoid(victim)) {
+    private static @Nullable HitboxPart classifyLocal(LivingEntity victim, AABB box, float bodyYaw, boolean upright,
+                                                      boolean aiming, Vec3 worldHit) {
+        if (!upright || box.getYsize() < box.getXsize()) {
             return null;
         }
 
         Vec3 centre = box.getCenter();
         double relY = (worldHit.y - box.minY) / box.getYsize();
 
-        double yaw = Math.toRadians(victim.yBodyRot);
+        double yaw = Math.toRadians(bodyYaw);
         Vec3 front = new Vec3(-Math.sin(yaw), 0.0, Math.cos(yaw)).normalize();
         Vec3 right = new Vec3(-front.z, 0.0, front.x);
 
@@ -414,7 +579,7 @@ public final class HitboxApi {
         double along = off.dot(front);
         double nx = side / (box.getXsize() * 0.5);
 
-        if (AhfConfig.poseAwareArms() && isAimingWeapon(victim)
+        if (AhfConfig.poseAwareArms() && aiming
                 && along > 0.0
                 && relY >= UPPER_ARM_LOW && relY < AhfConfig.headBandBottom()) {
             return armForAimPose(victim, nx);
@@ -447,7 +612,7 @@ public final class HitboxApi {
         return v < lo ? lo : (Math.min(v, hi));
     }
 
-    private static boolean isAimingWeapon(LivingEntity victim) {
+    public static boolean isAimingWeapon(LivingEntity victim) {
         if (victim.isUsingItem()) {
             ItemStack using = victim.getUseItem();
             if (using.getItem() instanceof BowItem || using.getItem() instanceof CrossbowItem) {

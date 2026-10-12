@@ -18,7 +18,6 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 @EventBusSubscriber(modid = Ahf.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class PoseStreamClient {
 
-    private static final float CHANGE_EPSILON = 1.0e-3F;
     private static volatile boolean enabled = false;
     private static long lastSentTick = Long.MIN_VALUE;
     private static float[] lastSent;
@@ -85,8 +84,9 @@ public final class PoseStreamClient {
         if (b == null || a.length != b.length) {
             return false;
         }
+        float eps = (float) AhfConfig.poseStreamChangeEpsilon();
         for (int i = 0; i < a.length; i++) {
-            if (Math.abs(a[i] - b[i]) > CHANGE_EPSILON) {
+            if (Math.abs(a[i] - b[i]) > eps) {
                 return false;
             }
         }

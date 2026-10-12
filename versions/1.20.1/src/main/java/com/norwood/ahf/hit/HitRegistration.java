@@ -21,7 +21,11 @@ public final class HitRegistration {
     }
 
     public static AABB registrationBox(Entity entity) {
-        AABB box = entity.getBoundingBox();
+        return registrationBox(entity, entity.getBoundingBox());
+    }
+
+    /** Envelope inflation applied to {@code box} instead of the live bounding box. */
+    public static AABB registrationBox(Entity entity, AABB box) {
         if (AhfConfig.hitRegistrationMode() == HitRegMode.OFF) {
             return box;
         }

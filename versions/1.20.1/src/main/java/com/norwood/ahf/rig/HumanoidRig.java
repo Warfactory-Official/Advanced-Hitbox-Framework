@@ -4,16 +4,25 @@ import com.norwood.ahf.config.AhfConfig;
 import com.norwood.ahf.geometry.Obb;
 import com.norwood.ahf.hook.AhfHooks;
 import com.norwood.ahf.part.HitboxPart;
+import com.norwood.ahf.pose.GunPoses;
+import com.norwood.ahf.pose.PoseClip;
+import com.norwood.ahf.pose.PoseLibrary;
 import com.norwood.ahf.stance.AhfStances;
 import com.norwood.ahf.stance.Stance;
+import com.norwood.ahf.stance.StancePose;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.UseAnim;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
+import org.joml.Matrix4d;
+import org.joml.Vector3d;
 
 public final class HumanoidRig {
 
@@ -40,14 +49,7 @@ public final class HumanoidRig {
     private static final double[][][] POSE_ADJUST = poseAdjust();
 
     private static double[][][] poseAdjust() {
-        double[][][] a = new double[RigTuning.RigPose.VALUES.length][HitboxPart.VALUES.length][RigTuning.FIELDS];
-        a[RigTuning.RigPose.CROUCHING.ordinal()][HitboxPart.HEAD.ordinal()] = new double[]{0, 0, 0, 0, 0, 0, 0, 1.75, 0};
-        a[RigTuning.RigPose.CROUCHING.ordinal()][HitboxPart.TORSO.ordinal()] = new double[]{0, 2, -1, 0, 0, 0, 0, 0, 0};
-        a[RigTuning.RigPose.CROUCHING.ordinal()][HitboxPart.LEFT_ARM.ordinal()] = new double[]{0, 2, -1, 0, 0, 0, 0, 0, 0};
-        a[RigTuning.RigPose.CROUCHING.ordinal()][HitboxPart.RIGHT_ARM.ordinal()] = new double[]{0, 2, -1, 0, 0, 0, 0, 0, 0};
-        a[RigTuning.RigPose.CROUCHING.ordinal()][HitboxPart.LEFT_LEG.ordinal()] = new double[]{0, 2, 0, 0, 0, 0, 0, 0, 0};
-        a[RigTuning.RigPose.CROUCHING.ordinal()][HitboxPart.RIGHT_LEG.ordinal()] = new double[]{0, 2, 0, 0, 0, 0, 0, 0, 0};
-        return a;
+        return new double[RigTuning.RigPose.VALUES.length][HitboxPart.VALUES.length][RigTuning.FIELDS];
     }
 
     private static final double[][][][] HAND_ADJUST = handAdjust();
@@ -67,6 +69,31 @@ public final class HumanoidRig {
 
     public static void setSpec(RigSpec next) {
         spec = (next == null) ? DEFAULT_SPEC : next;
+    }
+
+    /**
+     * Overrides a posed bone from an external animation system. Input and output use {@code ModelPart}
+     * conventions: pivot in model units, Euler radians, PA bend {@code (axis, angle)} rad. Returns
+     * {@link PoseClip#CHANNELS} values, or null to keep the vanilla pose. Bones: {@code head, torso, rightArm, leftArm,
+     * rightLeg, leftLeg}.
+     */
+    @FunctionalInterface
+    public interface AnimSampler {
+        double[] sample(LivingEntity entity, String bone, double[] in);
+
+        /**
+         * PlayerAnimator {@code body} (whole-player) transform into {@code out} ({@link PoseClip#CHANNELS}: x, y, z,
+         * pitch, yaw, roll, waist bend), blocks / rad, starting from zero; false => none.
+         */
+        default boolean body(LivingEntity entity, double[] out) {
+            return false;
+        }
+    }
+
+    private static volatile AnimSampler animSampler;
+
+    public static void setAnimSampler(AnimSampler sampler) {
+        animSampler = sampler;
     }
 
     public static double[] baseSpec(HitboxPart limb) {
@@ -167,7 +194,17 @@ public final class HumanoidRig {
     private HumanoidRig() {
     }
 
+    /** Client entities: the render's animation (sampler); server entities: the pose library. */
     public static LocalRig compute(LivingEntity victim) {
+        return compute(victim, victim.level().isClientSide ? animSampler : null);
+    }
+
+    /** The rig as a dedicated server computes it (pose library, no client animation sampler). */
+    public static LocalRig computeServer(LivingEntity victim) {
+        return compute(victim, null);
+    }
+
+    private static LocalRig compute(LivingEntity victim, AnimSampler sampler) {
         RigTuning.RigPose pose = resolvePose(victim);
         RigTuning.HandAction hand = resolveHandAction(victim);
 
@@ -179,26 +216,188 @@ public final class HumanoidRig {
         Part leftArm = part(HitboxPart.LEFT_ARM, pose, hand);
 
         setupAnim(victim, head, body, rightArm, leftArm, rightLeg, leftLeg);
+        // PlayerAnimator body transform, PA frame: x, y, z (blocks), pitch, yaw, roll.
+        double[] whole = new double[PoseClip.CHANNELS];
+        if (sampler != null) {
+            overrideBone(sampler, victim, "head", head);
+            overrideBone(sampler, victim, "torso", body);
+            overrideBone(sampler, victim, "rightArm", rightArm);
+            overrideBone(sampler, victim, "leftArm", leftArm);
+            overrideBone(sampler, victim, "rightLeg", rightLeg);
+            overrideBone(sampler, victim, "leftLeg", leftLeg);
+            sampler.body(victim, whole);
+        } else {
+            libraryPose(victim, new Part[]{head, body, rightArm, leftArm, rightLeg, leftLeg}, whole);
+        }
+        StancePose stancePose = StancePose.of(victim, 1.0F);
+        if (stancePose != null) {
+            double[] v = new double[PoseClip.CHANNELS];
+            stanceBone(stancePose, PoseClip.HEAD, head, v);
+            stanceBone(stancePose, PoseClip.TORSO, body, v);
+            stanceBone(stancePose, PoseClip.RIGHT_ARM, rightArm, v);
+            stanceBone(stancePose, PoseClip.LEFT_ARM, leftArm, v);
+            stanceBone(stancePose, PoseClip.RIGHT_LEG, rightLeg, v);
+            stanceBone(stancePose, PoseClip.LEFT_LEG, leftLeg, v);
+            stancePose.body(whole);
+        }
 
         double pad = AhfConfig.limbBoxPadding();
         LocalRig rig = new LocalRig();
-        rig.head = toObb(head, pad);
-        rig.torso = toObb(body, pad);
-        rig.leftArm = toObb(leftArm, pad);
-        rig.rightArm = toObb(rightArm, pad);
-        rig.leftLeg = toObb(leftLeg, pad);
-        rig.rightLeg = toObb(rightLeg, pad);
+        // Waist bend = PA body + torso bends; upper torso, head and arms turn with it (render: BodyRenderer).
+        body.bendAxis += whole[PoseClip.BEND_AXIS];
+        body.bend += whole[PoseClip.BEND];
+        Matrix4d torso = body.matrix();
+        Matrix4d chest = bent(body, torso);
+        Matrix4d upper = new Matrix4d(torso).invertAffine().mulLocal(chest);
+        rig.torso = toObb(body, torso, true, pad);
+        rig.chest = toObb(body, chest, false, pad);
+        rig.head = toObb(head, head.matrix().mulLocal(upper), null, pad);
+        limb(rightArm, upper, pad, rig, LocalRig.Slot.RIGHT_ARM, LocalRig.Slot.RIGHT_FOREARM);
+        limb(leftArm, upper, pad, rig, LocalRig.Slot.LEFT_ARM, LocalRig.Slot.LEFT_FOREARM);
+        limb(rightLeg, null, pad, rig, LocalRig.Slot.RIGHT_LEG, LocalRig.Slot.RIGHT_SHIN);
+        limb(leftLeg, null, pad, rig, LocalRig.Slot.LEFT_LEG, LocalRig.Slot.LEFT_SHIN);
+        applyWhole(rig, whole);
 
         Stance s = AhfStances.active(victim);
         if (s != null) {
             s.apply(victim, rig);
         } else {
-            applyPoseTilt(victim, rig);
+            applyVanillaTilt(victim, rig);
+        }
+        if (victim instanceof Player && victim.isCrouching()) {
+            lower(rig, CROUCH_RENDER_OFFSET * victim.getScale());
         }
         return rig;
     }
 
-    private static void applyPoseTilt(LivingEntity e, LocalRig rig) {
+    /** {@code PlayerRenderer.getRenderOffset} while crouching (KNEEL included), outermost render translate. */
+    static final double CROUCH_RENDER_OFFSET = 2.0 / 16.0;
+
+    private static void lower(LocalRig rig, double dy) {
+        for (LocalRig.Slot slot : LocalRig.SLOTS) {
+            Obb o = slot.get(rig);
+            slot.set(rig, new Obb(o.center().subtract(0.0, dy, 0.0), o.axisX(), o.axisY(), o.axisZ(), o.half(),
+                    o.limb()));
+        }
+    }
+
+    /**
+     * Server stand-in for the render's gun layers, layer order lower -> upper -> {@code empty} -> one-shot, then the
+     * rotation layer. Strides by synced walk position ({@link GunPoses#phased}); other loops at rest frame. Bones = PA
+     * order {@code head, torso, rightArm, leftArm, rightLeg, leftLeg}.
+     */
+    private static void libraryPose(LivingEntity e, Part[] parts, double[] whole) {
+        GunPoses.Selection sel = GunPoses.select(e, Math.min(GunPoses.walkSpeed(e), 1.0F));
+        if (sel == null) {
+            return;
+        }
+        double[][] v = new double[parts.length][];
+        for (int b = 0; b < parts.length; b++) {
+            v[b] = parts[b].channels(new double[PoseClip.CHANNELS]);
+        }
+        double walk = GunPoses.walkPos(e);
+        layer(sel.set(), sel.lower(), v, whole, walk);
+        layer(sel.set(), sel.upper(), v, whole, walk);
+        layer(sel.set(), GunPoses.EMPTY, v, whole, walk);
+        GunPoses.applyOnce(e, v, whole);
+        double[] r = new double[3];
+        for (int b = 0; b < parts.length; b++) {
+            parts[b].set(v[b]);
+        }
+        for (int b : new int[]{PoseClip.HEAD, PoseClip.RIGHT_ARM, PoseClip.LEFT_ARM}) {
+            Part p = parts[b];
+            r[0] = p.xRot;
+            r[1] = p.yRot;
+            r[2] = p.zRot;
+            GunPoses.adjust(e, 1.0F, sel.lying(), b, r);
+            p.xRot = r[0];
+            p.yRot = r[1];
+            p.zRot = r[2];
+        }
+        r[0] = whole[3];
+        r[1] = whole[4];
+        r[2] = whole[5];
+        GunPoses.adjust(e, 1.0F, sel.lying(), PoseClip.BODY, r);
+        whole[3] = r[0];
+        whole[4] = r[1];
+        whole[5] = r[2];
+    }
+
+    private static void layer(ResourceLocation set, @Nullable String name, double[][] v, double[] whole, double walk) {
+        PoseClip clip = name == null ? null : PoseLibrary.clip(set, name);
+        if (clip == null) {
+            return;
+        }
+        boolean phased = GunPoses.phased(name);
+        double t = phased ? GunPoses.phaseTicks(clip, walk) : 0;
+        for (int b = 0; b < v.length; b++) {
+            if (!clip.animates(b)) {
+                continue;
+            }
+            if (phased) {
+                clip.applyAt(b, t, v[b]);
+            } else {
+                clip.applyRest(b, v[b]);
+            }
+        }
+        if (phased) {
+            clip.applyAt(PoseClip.BODY, t, whole);
+        } else {
+            clip.applyRest(PoseClip.BODY, whole);
+        }
+    }
+
+    /**
+     * PA {@code body} on rig OBBs: {@code p' = T + C + Rz Ry Rx (p - C)}, {@code C = (0, PIVOT_Y, 0)}, in PA's frame
+     * (z = -rig z). Inside the vanilla tilt (PA applies it at {@code setupRotations} RETURN).
+     */
+    public static void applyWhole(LocalRig rig, double[] w) {
+        if (w[0] == 0.0 && w[1] == 0.0 && w[2] == 0.0 && w[3] == 0.0 && w[4] == 0.0 && w[5] == 0.0) {
+            return;
+        }
+        double cx = Math.cos(w[3]), sx = Math.sin(w[3]);
+        double cy = Math.cos(w[4]), sy = Math.sin(w[4]);
+        double cz = Math.cos(w[5]), sz = Math.sin(w[5]);
+        for (LocalRig.Slot slot : LocalRig.SLOTS) {
+            Obb o = slot.get(rig);
+            Vec3 c = o.center();
+            Vec3 q = whole(c.x, c.y - StancePose.PIVOT_Y, -c.z, cx, sx, cy, sy, cz, sz);
+            Vec3 centre = new Vec3(w[0] + q.x, w[1] + StancePose.PIVOT_Y + q.y, -(w[2] + q.z));
+            slot.set(rig, new Obb(centre, wholeAxis(o.axisX(), cx, sx, cy, sy, cz, sz),
+                    wholeAxis(o.axisY(), cx, sx, cy, sy, cz, sz), wholeAxis(o.axisZ(), cx, sx, cy, sy, cz, sz),
+                    o.half(), o.limb()));
+        }
+    }
+
+    private static Vec3 wholeAxis(Vec3 a, double cx, double sx, double cy, double sy, double cz, double sz) {
+        Vec3 q = whole(a.x, a.y, -a.z, cx, sx, cy, sy, cz, sz);
+        return new Vec3(q.x, q.y, -q.z);
+    }
+
+    /** {@code Rz Ry Rx} on a PA-frame vector. */
+    private static Vec3 whole(double x, double y, double z, double cx, double sx, double cy, double sy,
+                              double cz, double sz) {
+        double y1 = y * cx - z * sx;
+        double z1 = y * sx + z * cx;
+        double x2 = x * cy + z1 * sy;
+        double z2 = -x * sy + z1 * cy;
+        return new Vec3(x2 * cz - y1 * sz, x2 * sz + y1 * cz, z2);
+    }
+
+    private static void overrideBone(AnimSampler sampler, LivingEntity e, String bone, Part p) {
+        double[] r = sampler.sample(e, bone, p.channels(new double[PoseClip.CHANNELS]));
+        if (r != null) {
+            p.set(r);
+        }
+    }
+
+    private static void stanceBone(StancePose pose, int bone, Part p, double[] v) {
+        pose.apply(bone, p.channels(v));
+        p.set(v);
+    }
+
+    /** Vanilla swim/elytra render tilt; a {@link Stance} replacing it calls this to keep it counted once. */
+    public static void applyVanillaTilt(LivingEntity e, LocalRig rig) {
         double angle;
         double shiftY = 0.0;
         double shiftZ = 0.0;
@@ -230,12 +429,9 @@ public final class HumanoidRig {
         }
         double cos = Math.cos(angle);
         double sin = Math.sin(angle);
-        rig.head = tilt(rig.head, cos, sin, shiftY, shiftZ);
-        rig.torso = tilt(rig.torso, cos, sin, shiftY, shiftZ);
-        rig.leftArm = tilt(rig.leftArm, cos, sin, shiftY, shiftZ);
-        rig.rightArm = tilt(rig.rightArm, cos, sin, shiftY, shiftZ);
-        rig.leftLeg = tilt(rig.leftLeg, cos, sin, shiftY, shiftZ);
-        rig.rightLeg = tilt(rig.rightLeg, cos, sin, shiftY, shiftZ);
+        for (LocalRig.Slot slot : LocalRig.SLOTS) {
+            slot.set(rig, tilt(slot.get(rig), cos, sin, shiftY, shiftZ));
+        }
     }
 
     private static Obb tilt(Obb o, double cos, double sin, double shiftY, double shiftZ) {
@@ -251,8 +447,8 @@ public final class HumanoidRig {
 
     private static void setupAnim(LivingEntity e, Part head, Part body, Part rightArm, Part leftArm,
                                   Part rightLeg, Part leftLeg) {
-        double limbSwing = e.walkAnimation.position();
-        double limbSwingAmount = Math.min(e.walkAnimation.speed(), 1.0);
+        double limbSwing = GunPoses.walkPos(e);
+        double limbSwingAmount = Math.min(GunPoses.walkSpeed(e), 1.0);
         double ageInTicks = e.tickCount;
         double netHeadYaw = Mth.wrapDegrees(e.getYHeadRot() - e.yBodyRot);
         double headPitch = e.getXRot();
@@ -624,39 +820,46 @@ public final class HumanoidRig {
         return -65.0 * x + x * x;
     }
 
-    private static Obb toObb(Part p, double pad) {
-        double cx = p.ox + p.sx / 2.0;
-        double cy = p.oy + p.sy / 2.0;
-        double cz = p.oz + p.sz / 2.0;
-        double hx = p.sx / 2.0;
-        double hy = p.sy / 2.0;
-        double hz = p.sz / 2.0;
-
-        double rcx = Math.cos(p.xRot);
-        double rsx = Math.sin(p.xRot);
-        double rcy = Math.cos(p.yRot);
-        double rsy = Math.sin(p.yRot);
-        double rcz = Math.cos(p.zRot);
-        double rsz = Math.sin(p.zRot);
-
-        Vec3 centre = toLocalPoint(posed(p, cx, cy, cz, rcx, rsx, rcy, rsy, rcz, rsz));
-        Vec3 vx = toLocalPoint(posed(p, cx + hx, cy, cz, rcx, rsx, rcy, rsy, rcz, rsz)).subtract(centre);
-        Vec3 vy = toLocalPoint(posed(p, cx, cy + hy, cz, rcx, rsx, rcy, rsy, rcz, rsz)).subtract(centre);
-        Vec3 vz = toLocalPoint(posed(p, cx, cy, cz + hz, rcx, rsx, rcy, rsy, rcz, rsz)).subtract(centre);
-
-        Vec3 half = new Vec3(vx.length() + pad, vy.length() + pad, vz.length() + pad);
-        return new Obb(centre, vx.normalize(), vy.normalize(), vz.normalize(), half, p.limb);
+    /** Upper / lower halves of a bendable part; {@code pre} = waist bend (arms), null = none. */
+    private static void limb(Part p, Matrix4d pre, double pad, LocalRig rig, LocalRig.Slot upper,
+                             LocalRig.Slot lower) {
+        Matrix4d m = p.matrix();
+        if (pre != null) {
+            m.mulLocal(pre);
+        }
+        upper.set(rig, toObb(p, m, false, pad));
+        lower.set(rig, toObb(p, bent(p, m), true, pad));
     }
 
-    private static Vec3 posed(Part p, double x, double y, double z,
-                              double cx, double sx, double cy, double sy, double cz, double sz) {
-        double y1 = y * cx - z * sx;
-        double z1 = y * sx + z * cx;
-        double x2 = x * cy + z1 * sy;
-        double z2 = -x * sy + z1 * cy;
-        double x3 = x2 * cz - y1 * sz;
-        double y3 = x2 * sz + y1 * cz;
-        return new Vec3(p.x + x3, p.y + y3, p.z + z2);
+    /** {@code m T(c) R(bend) T(-c)}, c = box centre (PA / bendy-lib bend pivot), part px. */
+    private static Matrix4d bent(Part p, Matrix4d m) {
+        Matrix4d out = new Matrix4d(m);
+        if (p.bend != 0.0) {
+            double cx = p.ox + p.sx / 2.0, cy = p.oy + p.sy / 2.0, cz = p.oz + p.sz / 2.0;
+            double axis = -p.bendAxis;
+            out.translate(cx, cy, cz).rotate(p.bend, Math.cos(axis), 0.0, Math.sin(axis)).translate(-cx, -cy, -cz);
+        }
+        return out;
+    }
+
+    /** Box of {@code p} posed by {@code m} (part px -> model px); {@code half}: null = whole, false upper, true lower. */
+    private static Obb toObb(Part p, Matrix4d m, Boolean half, double pad) {
+        double sy = half == null ? p.sy : p.sy / 2.0;
+        double oy = half == Boolean.TRUE ? p.oy + sy : p.oy;
+        double cx = p.ox + p.sx / 2.0;
+        double cy = oy + sy / 2.0;
+        double cz = p.oz + p.sz / 2.0;
+        Vec3 centre = toLocalPoint(at(m, cx, cy, cz));
+        Vec3 vx = toLocalPoint(at(m, cx + p.sx / 2.0, cy, cz)).subtract(centre);
+        Vec3 vy = toLocalPoint(at(m, cx, cy + sy / 2.0, cz)).subtract(centre);
+        Vec3 vz = toLocalPoint(at(m, cx, cy, cz + p.sz / 2.0)).subtract(centre);
+        Vec3 halfExtent = new Vec3(vx.length() + pad, vy.length() + pad, vz.length() + pad);
+        return new Obb(centre, vx.normalize(), vy.normalize(), vz.normalize(), halfExtent, p.limb);
+    }
+
+    private static Vec3 at(Matrix4d m, double x, double y, double z) {
+        Vector3d v = m.transformPosition(x, y, z, new Vector3d());
+        return new Vec3(v.x, v.y, v.z);
     }
 
     private static Vec3 toLocalPoint(Vec3 model) {
@@ -678,21 +881,30 @@ public final class HumanoidRig {
         }
     }
 
+    /** Bendable parts split at the bend pivot: {@code chest} (top, bent) / {@code torso}, upper arm / forearm, thigh / shin. */
     public static final class LocalRig {
         public static final Slot[] SLOTS = Slot.values();
         public Obb head;
         public Obb torso;
+        public Obb chest;
         public Obb leftArm;
+        public Obb leftForearm;
         public Obb rightArm;
+        public Obb rightForearm;
         public Obb leftLeg;
+        public Obb leftShin;
         public Obb rightLeg;
+        public Obb rightShin;
 
         private Obb[] all;
 
         public Obb[] all() {
             Obb[] a = all;
             if (a == null) {
-                a = new Obb[]{head, torso, leftArm, rightArm, leftLeg, rightLeg};
+                a = new Obb[SLOTS.length];
+                for (Slot s : SLOTS) {
+                    a[s.ordinal()] = s.get(this);
+                }
                 all = a;
             }
             return a;
@@ -701,10 +913,15 @@ public final class HumanoidRig {
         public enum Slot {
             HEAD(HitboxPart.HEAD),
             TORSO(HitboxPart.TORSO),
+            CHEST(HitboxPart.TORSO),
             LEFT_ARM(HitboxPart.LEFT_ARM),
+            LEFT_FOREARM(HitboxPart.LEFT_ARM),
             RIGHT_ARM(HitboxPart.RIGHT_ARM),
+            RIGHT_FOREARM(HitboxPart.RIGHT_ARM),
             LEFT_LEG(HitboxPart.LEFT_LEG),
-            RIGHT_LEG(HitboxPart.RIGHT_LEG);
+            LEFT_SHIN(HitboxPart.LEFT_LEG),
+            RIGHT_LEG(HitboxPart.RIGHT_LEG),
+            RIGHT_SHIN(HitboxPart.RIGHT_LEG);
 
             public final HitboxPart limb;
 
@@ -716,10 +933,15 @@ public final class HumanoidRig {
                 return switch (this) {
                     case HEAD -> r.head;
                     case TORSO -> r.torso;
+                    case CHEST -> r.chest;
                     case LEFT_ARM -> r.leftArm;
+                    case LEFT_FOREARM -> r.leftForearm;
                     case RIGHT_ARM -> r.rightArm;
+                    case RIGHT_FOREARM -> r.rightForearm;
                     case LEFT_LEG -> r.leftLeg;
+                    case LEFT_SHIN -> r.leftShin;
                     case RIGHT_LEG -> r.rightLeg;
+                    case RIGHT_SHIN -> r.rightShin;
                 };
             }
 
@@ -727,10 +949,15 @@ public final class HumanoidRig {
                 switch (this) {
                     case HEAD -> r.head = o;
                     case TORSO -> r.torso = o;
+                    case CHEST -> r.chest = o;
                     case LEFT_ARM -> r.leftArm = o;
+                    case LEFT_FOREARM -> r.leftForearm = o;
                     case RIGHT_ARM -> r.rightArm = o;
+                    case RIGHT_FOREARM -> r.rightForearm = o;
                     case LEFT_LEG -> r.leftLeg = o;
+                    case LEFT_SHIN -> r.leftShin = o;
                     case RIGHT_LEG -> r.rightLeg = o;
+                    case RIGHT_SHIN -> r.rightShin = o;
                 }
                 r.all = null;
             }
@@ -742,6 +969,7 @@ public final class HumanoidRig {
         final HitboxPart limb;
         double x, y, z;
         double xRot, yRot, zRot;
+        double bendAxis, bend;
 
         Part(double ox, double oy, double oz, double sx, double sy, double sz,
              double px, double py, double pz, HitboxPart limb) {
@@ -755,6 +983,34 @@ public final class HumanoidRig {
             this.y = py;
             this.z = pz;
             this.limb = limb;
+        }
+
+        double[] channels(double[] v) {
+            v[0] = x;
+            v[1] = y;
+            v[2] = z;
+            v[3] = xRot;
+            v[4] = yRot;
+            v[5] = zRot;
+            v[PoseClip.BEND_AXIS] = bendAxis;
+            v[PoseClip.BEND] = bend;
+            return v;
+        }
+
+        void set(double[] v) {
+            x = v[0];
+            y = v[1];
+            z = v[2];
+            xRot = v[3];
+            yRot = v[4];
+            zRot = v[5];
+            bendAxis = v[PoseClip.BEND_AXIS];
+            bend = v[PoseClip.BEND];
+        }
+
+        /** ModelPart transform: {@code T(x, y, z) Rz Ry Rx}, part px -> model px. */
+        Matrix4d matrix() {
+            return new Matrix4d().translation(x, y, z).rotateZYX(zRot, yRot, xRot);
         }
     }
 }

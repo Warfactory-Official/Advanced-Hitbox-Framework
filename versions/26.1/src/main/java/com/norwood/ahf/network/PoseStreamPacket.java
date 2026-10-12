@@ -3,7 +3,6 @@ package com.norwood.ahf.network;
 import com.norwood.ahf.Ahf;
 import com.norwood.ahf.config.AhfConfig;
 import com.norwood.ahf.geometry.Obb;
-import com.norwood.ahf.hit.HitAuthority;
 import com.norwood.ahf.part.HitboxPart;
 import com.norwood.ahf.rig.HumanoidRig;
 import com.norwood.ahf.rig.RigCache;
@@ -64,7 +63,7 @@ public record PoseStreamPacket(HumanoidRig.LocalRig rig) implements CustomPacket
     }
 
     public void handleServer(ServerPlayer sender) {
-        if (sender == null || AhfConfig.hitAuthority() != HitAuthority.CLIENT_HINT) {
+        if (sender == null || !AhfConfig.useClientPose()) {
             return;
         }
         RigCache.submitHint(sender.getId(), rig, sender.level().getGameTime());

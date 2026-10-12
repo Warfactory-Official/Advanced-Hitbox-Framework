@@ -2,7 +2,6 @@ package com.norwood.ahf.rig;
 
 import com.norwood.ahf.config.AhfConfig;
 import com.norwood.ahf.geometry.Obb;
-import com.norwood.ahf.hit.HitAuthority;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 
@@ -18,13 +17,29 @@ public final class RigCache {
     }
 
     public static HumanoidRig.LocalRig resolve(LivingEntity victim) {
-        if (!victim.level().isClientSide && AhfConfig.hitAuthority() == HitAuthority.CLIENT_HINT) {
+        if (!victim.level().isClientSide && AhfConfig.useClientPose()) {
             HumanoidRig.LocalRig hinted = validHint(victim);
             if (hinted != null) {
                 return hinted;
             }
         }
         return get(victim);
+    }
+
+    /**
+     * {@link #resolve} for history capture at {@code LevelTickEvent.Pre}: computed rig cached under {@code tick}
+     * (the level's time once it advances) => the tick's first live query reuses it.
+     */
+    public static HumanoidRig.LocalRig capture(LivingEntity victim, long tick) {
+        if (AhfConfig.useClientPose()) {
+            HumanoidRig.LocalRig hinted = validHint(victim);
+            if (hinted != null) {
+                return hinted;
+            }
+        }
+        HumanoidRig.LocalRig rig = HumanoidRig.compute(victim);
+        put(key(victim), tick, rig);
+        return rig;
     }
 
     public static HumanoidRig.LocalRig get(LivingEntity victim) {
@@ -35,11 +50,15 @@ public final class RigCache {
             return e.rig;
         }
         HumanoidRig.LocalRig rig = HumanoidRig.compute(victim);
+        put(k, gameTime, rig);
+        return rig;
+    }
+
+    private static void put(long k, long tick, HumanoidRig.LocalRig rig) {
         if (CACHE.size() > MAX_ENTRIES) {
             CACHE.clear();
         }
-        CACHE.put(k, new Entry(gameTime, rig));
-        return rig;
+        CACHE.put(k, new Entry(tick, rig));
     }
 
     public static void submitHint(int entityId, HumanoidRig.LocalRig rig, long receivedTick) {
@@ -65,7 +84,7 @@ public final class RigCache {
         return plausible(victim, h.rig) ? h.rig : null;
     }
 
-    private static boolean plausible(LivingEntity victim, HumanoidRig.LocalRig rig) {
+    public static boolean plausible(LivingEntity victim, HumanoidRig.LocalRig rig) {
         double margin = AhfConfig.poseHintMargin();
         double reach = Math.max(victim.getBbHeight(), 1.9) + margin;
         double reachSq = reach * reach;

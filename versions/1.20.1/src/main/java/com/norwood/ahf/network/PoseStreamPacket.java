@@ -1,11 +1,10 @@
 package com.norwood.ahf.network;
 
 import com.norwood.ahf.config.AhfConfig;
-import com.norwood.ahf.hit.HitAuthority;
 import com.norwood.ahf.geometry.Obb;
+import com.norwood.ahf.part.HitboxPart;
 import com.norwood.ahf.rig.HumanoidRig;
 import com.norwood.ahf.rig.RigCache;
-import com.norwood.ahf.part.HitboxPart;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
@@ -20,9 +19,9 @@ public record PoseStreamPacket(HumanoidRig.LocalRig rig) {
         return new PoseStreamPacket(rig);
     }
 
-    public void encode(FriendlyByteBuf buf) {
+    public static void encode(FriendlyByteBuf buf, PoseStreamPacket packet) {
         for (HumanoidRig.LocalRig.Slot slot : HumanoidRig.LocalRig.SLOTS) {
-            writeObb(buf, slot.get(rig));
+            writeObb(buf, slot.get(packet.rig));
         }
     }
 
@@ -54,7 +53,7 @@ public record PoseStreamPacket(HumanoidRig.LocalRig rig) {
     }
 
     public void handleServer(ServerPlayer sender) {
-        if (sender == null || AhfConfig.hitAuthority() != HitAuthority.CLIENT_HINT) {
+        if (sender == null || !AhfConfig.useClientPose()) {
             return;
         }
         RigCache.submitHint(sender.getId(), rig, sender.level().getGameTime());
