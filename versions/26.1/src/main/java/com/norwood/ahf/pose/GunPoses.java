@@ -4,6 +4,7 @@ import com.norwood.ahf.hook.AhfHooks;
 import com.norwood.ahf.lagcomp.EntityHistory;
 import com.norwood.ahf.stance.AhfStance;
 import com.norwood.ahf.stance.Posture;
+import com.norwood.ahf.stance.StanceLogic;
 import com.norwood.ahf.stance.StanceState;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -27,6 +28,13 @@ public final class GunPoses {
     public static final String EMPTY = "empty";
     private static final float MOVING = 0.05F;
     private static final float YAW_CLAMP = 85.0F;
+    private static final double DEG = Math.PI / 180.0;
+    /** Pitch carried by the waist bend; the rest by head + arms (shoulders). */
+    static final double SPINE_SHARE = 0.35;
+    /** Lying: pitch down drawn at most this (rad): chest on the ground. */
+    static final double LIE_PITCH_DOWN = Math.toRadians(20.0);
+    /** Turn-in-place step: thigh swing, rad, at full turn rate. */
+    static final double STEP_LIFT = 0.35;
     /** Vanilla limb cycle, walk-position units ({@code cos(pos * 0.6662)}). */
     public static final double STRIDE = 2.0 * Math.PI / 0.6662;
     /** TACZ layer fade, ticks. */
@@ -221,25 +229,57 @@ public final class GunPoses {
     }
 
     /**
-     * Rotation layer (added after every clip): {@code body} +(0, -yaw, 0) standing, +(0, 0, -yaw) lying, none while
-     * riding; {@code head} and both arms +pitch on x. {@code rot} = radians, rewritten in place.
+     * Rotation layer (added after every clip), {@code v} = {@link PoseClip#CHANNELS} of {@code bone}, in place; each
+     * channel group (position, rotation, bend) reads only its own input. Riding => pitch only.
+     * <ul>
+     * <li>{@code body}: +(0, -yaw, 0) standing, +(0, 0, -yaw) lying (split by {@code lie}, 0..1: follows the tilt);
+     * waist bend {@link #SPINE_SHARE} of the pitch (lying: looking up only).</li>
+     * <li>{@code head}, arms: + the rest of the pitch on x; lying, pitch down capped {@link #LIE_PITCH_DOWN}.</li>
+     * <li>legs: turned back to the body yaw about the pelvis (planted while the upper body aims); step lift while
+     * the body yaw turns.</li>
+     * </ul>
      */
-    public static void adjust(LivingEntity e, float pt, boolean lying, int bone, double[] rot) {
+    public static void adjust(LivingEntity e, float pt, double lie, int bone, double[] v) {
+        boolean riding = e.getVehicle() != null;
+        double pitch = pitch(e, pt) * DEG;
+        if (pitch > 0.0) {
+            pitch += (Math.min(pitch, LIE_PITCH_DOWN) - pitch) * lie;
+        }
+        double spine = riding ? 0.0 : SPINE_SHARE * pitch * (pitch < 0.0 ? 1.0 : 1.0 - lie);
+        double yaw = riding ? 0.0 : -headYaw(e, pt) * DEG;
         switch (bone) {
             case PoseClip.BODY -> {
-                if (e.getVehicle() == null) {
-                    double yaw = -headYaw(e, pt) * (Math.PI / 180.0);
-                    if (lying) {
-                        rot[2] += (float) yaw;
-                    } else {
-                        rot[1] += (float) yaw;
-                    }
-                }
+                v[4] += yaw * (1.0 - lie);
+                v[5] += yaw * lie;
+                v[PoseClip.BEND] += spine;
             }
-            case PoseClip.HEAD, PoseClip.RIGHT_ARM, PoseClip.LEFT_ARM -> rot[0] += (float) (pitch(e, pt) * (Math.PI / 180.0));
+            case PoseClip.HEAD, PoseClip.RIGHT_ARM, PoseClip.LEFT_ARM -> v[3] += pitch - spine;
+            case PoseClip.RIGHT_LEG, PoseClip.LEFT_LEG -> {
+                double legYaw = yaw * (1.0 - lie);
+                double c = Math.cos(legYaw), sn = Math.sin(legYaw);
+                double x = v[0], z = v[2];
+                v[0] = x * c + z * sn;
+                v[2] = -x * sn + z * c;
+                v[4] += legYaw;
+                float turn = Math.abs(Mth.wrapDegrees(e.yBodyRot - e.yBodyRotO));
+                double phase = Math.sin(4.0 * Mth.rotLerp(pt, e.yBodyRotO, e.yBodyRot) * DEG);
+                double lift = STEP_LIFT * Math.min(turn / StanceLogic.TURN_RATE, 1.0F) * (1.0 - lie);
+                v[3] -= lift * Math.max(0.0, bone == PoseClip.RIGHT_LEG ? phase : -phase);
+            }
             default -> {
             }
         }
+    }
+
+    /** Lying weight for {@link #adjust}: vanilla's swim amount (drawn tilt vanilla, no PlayerAnimator layer). */
+    public static double lie(LivingEntity e, float pt) {
+        return e.getSwimAmount(pt);
+    }
+
+    /** Held set has lying clips. */
+    public static boolean hasLying(LivingEntity e) {
+        Identifier set = AhfHooks.poseSet(e);
+        return set != null && resolve(set, "lie") != null;
     }
 
     /** Library prone (clip replaces AHF's procedural PRONE legs). */

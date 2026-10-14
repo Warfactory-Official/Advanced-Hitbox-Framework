@@ -9,12 +9,13 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaterniond;
-import org.joml.Vector3d;
+import org.joml.Matrix3d;
 
 /**
  * Stance geometry shared by the rig ({@link HumanoidRig}) and the PlayerAnimator layer: per-bone deltas
  * ({@link StanceClips}, PA channels) plus {@link #body} added to PlayerAnimator's {@code body} transform (pivot
- * {@link #PIVOT_Y}). Vanilla SWIMMING tilt applied after, once, by vanilla render and {@link HumanoidRig#applyVanillaTilt}.
+ * {@link #PIVOT_Y}). Lying tilt ({@link #lie}) applied after, once, by {@code PlayerRendererTiltMixin} and
+ * {@link HumanoidRig#applyVanillaTilt}.
  */
 public final class StancePose {
 
@@ -28,6 +29,24 @@ public final class StancePose {
     static final double DOWNED_YAW = Math.toRadians(8.0);
     static final double DOWNED_LIFT = 0.1;
     private static final int CH = PoseClip.CHANNELS;
+    /** Vanilla {@code HumanoidModel} crouch minus upright, [bone * CHANNELS + ch], ModelPart units. */
+    private static final double[] CROUCH = new double[PoseClip.BONES.length * CH];
+    /** {@code PlayerRenderer.getRenderOffset} while crouching, blocks (x scale). */
+    public static final double CROUCH_RENDER_OFFSET = 2.0 / 16.0;
+
+    static {
+        CROUCH[PoseClip.HEAD * CH + 1] = 4.2;
+        CROUCH[PoseClip.TORSO * CH + 1] = 3.2;
+        CROUCH[PoseClip.TORSO * CH + 3] = 0.5;
+        for (int arm : new int[]{PoseClip.RIGHT_ARM, PoseClip.LEFT_ARM}) {
+            CROUCH[arm * CH + 1] = 3.2;
+            CROUCH[arm * CH + 3] = 0.4;
+        }
+        for (int leg : new int[]{PoseClip.RIGHT_LEG, PoseClip.LEFT_LEG}) {
+            CROUCH[leg * CH + 1] = 0.2;
+            CROUCH[leg * CH + 2] = 4.0;
+        }
+    }
 
     public final Posture posture;
     /** Body roll about the forward axis, radians; lean right => negative. */
@@ -36,6 +55,15 @@ public final class StancePose {
     public final double rollTurn;
     /** PRONE bones from the pose library (GunPoses lying clip) instead of the procedural legs. */
     public final boolean libraryLying;
+    /** Lying tilt 0..1, eased + smoothstepped (replaces vanilla's swim tilt): {@link #lieOf}. */
+    public double lie;
+    /** Transition: pose left behind, weight of this pose over it (0..1); null = settled. */
+    private @Nullable StancePose from;
+    private double blend = 1.0;
+    /** Crouch {@code from} stood in minus the layers' crouch now; see {@link #leaving}. */
+    private double fromCrouch;
+    private boolean crouchBones;
+    private double scale = 1.0;
     private final double[] jitter = new double[4];
     /** [PA bone * CHANNELS + channel] over the layers below: positions added, rotations premultiplied (parent frame). */
     private final double[] delta = new double[PoseClip.BONES.length * CH];
@@ -94,11 +122,53 @@ public final class StancePose {
         double lean = eff.lying() ? 0.0 : s.lean(partialTick);
         double height = s.height(partialTick);
         double side = s.sideAmount(partialTick);
-        if (eff == Posture.STAND && lean == 0.0 && height == 0.0 && side == 0.0 || StanceLogic.suspended(p)) {
+        double blend = s.blend(partialTick);
+        double lie = smooth(s.lie(partialTick));
+        if (eff == Posture.STAND && lean == 0.0 && height == 0.0 && side == 0.0 && blend >= 1.0 && lie == 0.0
+                || StanceLogic.suspended(p)) {
             return null;
         }
-        return new StancePose(eff, lean, height, side, s.rollDir(), s.rollProgress(partialTick), p.getId(),
+        StancePose pose = new StancePose(eff, lean, height, side, s.rollDir(), s.rollProgress(partialTick), p.getId(),
                 eff == Posture.PRONE && GunPoses.libraryLying(p));
+        pose.lie = lie;
+        pose.scale = p.getScale();
+        if (blend < 1.0) {
+            Posture from = s.from();
+            // Own player: LocalPlayer.isCrouching = sneak key => no vanilla crouch in KNEEL to undo.
+            double crouch = p.isLocalPlayer() ? 0.0
+                    : (from == Posture.KNEEL ? 1.0 : 0.0) - (p.isCrouching() ? 1.0 : 0.0);
+            pose.leaving(new StancePose(from, from.lying() ? 0.0 : lean, s.fromHeight(), s.fromSide(), 0, 0.0,
+                    p.getId(), from == Posture.PRONE && GunPoses.hasLying(p)), smooth(blend), crouch,
+                    GunPoses.select(p, Math.min(GunPoses.walkSpeed(p), 1.0F)) == null);
+        }
+        return pose;
+    }
+
+    /**
+     * This pose reached from {@code from} by {@code blend} (0 = {@code from}, 1 = this); {@code fromCrouch} = vanilla
+     * crouch {@code from} stood in minus the crouch the layers below carry now; {@code crouchBones} false => gun
+     * clips own the bones (upper overwritten, lower faded by the consumer), render offset only.
+     */
+    StancePose leaving(StancePose from, double blend, double fromCrouch, boolean crouchBones) {
+        this.from = from;
+        this.blend = blend;
+        this.fromCrouch = fromCrouch;
+        this.crouchBones = crouchBones;
+        return this;
+    }
+
+    /** {@link #lie} without building the pose; NaN => vanilla tilt (no stance, or upright + settled: vanilla crawl). */
+    public static double lieOf(LivingEntity e, float partialTick) {
+        StanceState s = e instanceof Player p && !StanceLogic.suspended(p) ? AhfStance.get(p) : null;
+        if (s == null) {
+            return Double.NaN;
+        }
+        float lie = s.lie(partialTick);
+        return lie == 0.0F && !s.effective().lying() ? Double.NaN : smooth(lie);
+    }
+
+    static double smooth(double t) {
+        return t * t * (3.0 - 2.0 * t);
     }
 
     /** Clip per level from {@code min}; null = the posture's own pose. Blend between neighbours eased INOUTSINE. */
@@ -122,16 +192,30 @@ public final class StancePose {
 
     /** Body drop, blocks (PA {@code body} y down). */
     public double drop() {
-        return -delta[PoseClip.BODY * CH + 1];
+        double d = -delta[PoseClip.BODY * CH + 1];
+        return from == null ? d : from.drop() + (d - from.drop()) * blend;
     }
 
     /** Side step, blocks, rig local x (right +). */
     public double shift() {
-        return delta[PoseClip.BODY * CH];
+        double d = delta[PoseClip.BODY * CH];
+        return from == null ? d : from.shift() + (d - from.shift()) * blend;
     }
 
     /** Adds this stance to a PA {@code body} transform {@code x, y, z, pitch, yaw, roll, bend axis, bend} (PA frame). */
     public void body(double[] w) {
+        if (from == null) {
+            ownBody(w);
+            return;
+        }
+        double[] b = w.clone();
+        from.ownBody(b);
+        b[1] -= fromCrouch * CROUCH_RENDER_OFFSET * scale;
+        ownBody(w);
+        mix(b, w, blend);
+    }
+
+    private void ownBody(double[] w) {
         for (int ch = 0; ch < CH; ch++) {
             w[ch] += delta[PoseClip.BODY * CH + ch];
         }
@@ -146,6 +230,42 @@ public final class StancePose {
 
     /** PA bone {@code bone} ({@link PoseClip#HEAD}..{@link PoseClip#LEFT_LEG}), {@link PoseClip#CHANNELS} values, in place. */
     public void apply(int bone, double[] v) {
+        if (from == null) {
+            own(bone, v);
+            return;
+        }
+        double[] b = v.clone();
+        if (crouchBones) {
+            for (int ch = 0; ch < CH; ch++) {
+                b[ch] += fromCrouch * CROUCH[bone * CH + ch];
+            }
+        }
+        from.own(bone, b);
+        own(bone, v);
+        mix(b, v, blend);
+    }
+
+    /** {@code to = from + (to - from) * t}: positions + bend linear, ZYX rotation slerped. */
+    private static void mix(double[] from, double[] to, double t) {
+        for (int ch : new int[]{0, 1, 2, PoseClip.BEND_AXIS, PoseClip.BEND}) {
+            to[ch] = from[ch] + (to[ch] - from[ch]) * t;
+        }
+        eulerZYX(new Quaterniond().rotationZYX(from[5], from[4], from[3])
+                .slerp(new Quaterniond().rotationZYX(to[5], to[4], to[3]), t), to);
+    }
+
+    /**
+     * {@code v[3..5] = (x, y, z)} with {@code q = Rz Ry Rx}. JOML 1.10.5 {@code getEulerAnglesZYX} FORBIDDEN: x off
+     * (0.1 -> 0.0966 round trip).
+     */
+    static void eulerZYX(Quaterniond q, double[] v) {
+        Matrix3d m = new Matrix3d().set(q);
+        v[3] = Math.atan2(m.m12, m.m22);
+        v[4] = Math.asin(Mth.clamp(-m.m02, -1.0, 1.0));
+        v[5] = Math.atan2(m.m01, m.m00);
+    }
+
+    private void own(int bone, double[] v) {
         boolean leg = bone == PoseClip.RIGHT_LEG || bone == PoseClip.LEFT_LEG;
         boolean arm = bone == PoseClip.RIGHT_ARM || bone == PoseClip.LEFT_ARM;
         double sideSign = bone == PoseClip.RIGHT_ARM || bone == PoseClip.RIGHT_LEG ? 1.0 : -1.0;
@@ -172,12 +292,8 @@ public final class StancePose {
         v[2] += delta[o + 2];
         if (delta[o + 3] != 0.0 || delta[o + 4] != 0.0 || delta[o + 5] != 0.0) {
             // Parent frame: Euler add would turn a clip's lean with the gun hold's yaw (bladed torso leans sideways).
-            Quaterniond q = new Quaterniond().rotationZYX(delta[o + 5], delta[o + 4], delta[o + 3])
-                    .mul(new Quaterniond().rotationZYX(v[5], v[4], v[3]));
-            Vector3d e = q.getEulerAnglesZYX(new Vector3d());
-            v[3] = e.x;
-            v[4] = e.y;
-            v[5] = e.z;
+            eulerZYX(new Quaterniond().rotationZYX(delta[o + 5], delta[o + 4], delta[o + 3])
+                    .mul(new Quaterniond().rotationZYX(v[5], v[4], v[3])), v);
         }
         if (roll != 0.0 && leg) {
             v[5] -= roll;
@@ -195,7 +311,25 @@ public final class StancePose {
 
     /** Body roll seen by the camera, rad (lean right => negative; PRONE side roll right => negative). */
     public double viewRoll() {
-        return posture == Posture.PRONE ? roll - delta[PoseClip.BODY * CH + 4] : roll;
+        double r = posture == Posture.PRONE ? roll - delta[PoseClip.BODY * CH + 4] : roll;
+        return from == null ? r : from.viewRoll() + (r - from.viewRoll()) * blend;
+    }
+
+    /** Lying tilt at {@code lie} ({@link #lieOf}): about rig x, radians (vanilla swim tilt sign). */
+    public static double tiltAngle(double lie) {
+        return lie * Math.PI / 2.0;
+    }
+
+    /**
+     * Lying tilt shift, rig frame {@code (y, z)} blocks: vanilla's flat end {@code (0.3, -1)} reached linearly, pivot
+     * at the feet (vanilla's rotated-frame shift sinks the body 1 block at the start of the tilt).
+     */
+    public static double tiltShiftY(double lie) {
+        return 0.3 * lie;
+    }
+
+    public static double tiltShiftZ(double lie) {
+        return -lie;
     }
 
     /** Rig local -> world direction at body yaw {@code yawDeg}. */

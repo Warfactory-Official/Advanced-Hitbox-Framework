@@ -15,7 +15,8 @@
   "client": [
     "CameraMixin",
     "HumanoidArmorLayerMixin",
-    "PlayerModelMixin"
+    "PlayerModelMixin",
+    "PlayerRendererTiltMixin"
   ],
   "server": [],
   "injectors": {

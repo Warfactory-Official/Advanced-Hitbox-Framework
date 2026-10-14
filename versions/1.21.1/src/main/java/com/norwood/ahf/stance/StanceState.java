@@ -60,6 +60,18 @@ public final class StanceState {
     float adsProgress;
     float adsProgressO;
     float bodyYawO;
+    /** Turn in place under way ({@link StanceLogic#stepBodyYaw(StanceState, float, boolean)}); local, both sides. */
+    boolean turning;
+    /** Posture transition: eased pose leaves {@code from} (frozen at {@code fromHeight} / {@code fromSide}). */
+    Posture shown = Posture.STAND;
+    Posture from = Posture.STAND;
+    float fromHeight;
+    float fromSide;
+    float blend = 1.0F;
+    float blendO = 1.0F;
+    /** Lying amount (render + rig tilt), 0 upright .. 1 flat. */
+    float lie;
+    float lieO;
 
     int dirty;
     int intents;
@@ -122,6 +134,27 @@ public final class StanceState {
 
     public float sideAmount(float partialTick) {
         return Mth.lerp(partialTick, sideAmountO, sideAmount);
+    }
+
+    public Posture from() {
+        return from;
+    }
+
+    public float fromHeight() {
+        return fromHeight;
+    }
+
+    public float fromSide() {
+        return fromSide;
+    }
+
+    /** Transition progress from {@link #from()} to the effective posture, 0..1 (1 = settled). */
+    public float blend(float partialTick) {
+        return Mth.lerp(partialTick, blendO, blend);
+    }
+
+    public float lie(float partialTick) {
+        return Mth.lerp(partialTick, lieO, lie);
     }
 
     public boolean rolling() {
@@ -276,19 +309,46 @@ public final class StanceState {
         crawl = false;
         lean = leanO = 0.0F;
         height = heightO = sideAmount = sideAmountO = 0.0F;
+        shown = from = Posture.STAND;
+        blend = blendO = 1.0F;
+        lie = lieO = 0.0F;
         rollDir = 0;
         adsProgress = adsProgressO = 0.0F;
         dirty |= ALL;
     }
 
     void ease(float leanRate, float adsRate, float stepRate, float sideRate) {
-        float leanTo = effective().lying() ? 0.0F : leanTarget;
+        Posture eff = effective();
+        float leanTo = eff.lying() ? 0.0F : leanTarget;
         leanO = lean;
         lean = approach(lean, leanTo, leanRate);
         heightO = height;
-        height = approach(height, effectiveLevel(), stepRate);
         sideAmountO = sideAmount;
+        blendO = blend;
+        if (eff != shown) {
+            if (eff == from && blend < 1.0F) {
+                // Reversed mid-way: back along the same blend, no jump.
+                float h = fromHeight, sd = fromSide;
+                fromHeight = height;
+                fromSide = sideAmount;
+                height = heightO = h;
+                sideAmount = sideAmountO = sd;
+                blend = blendO = 1.0F - blend;
+            } else {
+                fromHeight = height;
+                fromSide = sideAmount;
+                height = heightO = effectiveLevel();
+                sideAmount = sideAmountO = 0.0F;
+                blend = blendO = 0.0F;
+            }
+            from = shown;
+            shown = eff;
+        }
+        blend = approach(blend, 1.0F, StanceLogic.transitionRate(from, eff));
+        height = approach(height, effectiveLevel(), stepRate);
         sideAmount = approach(sideAmount, effectiveSide(), sideRate);
+        lieO = lie;
+        lie = approach(lie, eff.lying() ? 1.0F : 0.0F, StanceLogic.LIE_RATE);
         adsProgressO = adsProgress;
         adsProgress = approach(adsProgress, ads && !downed ? 1.0F : 0.0F, adsRate);
     }

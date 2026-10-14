@@ -25,6 +25,10 @@ public final class StanceLogic {
     public static final float BODY_YAW_MAX_LAG_LYING = 20.0F;
     public static final float BODY_YAW_EASE = 0.25F;
     public static final float BODY_YAW_SYNC_EPSILON = 1.0F;
+    /** Turn in place (upright, still): planted until gap > START, then RATE deg/tick until gap < STOP. */
+    public static final float TURN_START = 35.0F, TURN_RATE = 9.0F, TURN_STOP = 2.0F;
+    /** Walk speed above which the body eases toward the camera every tick. */
+    static final float MOVING_SPEED = 0.05F;
     public static final float KNEEL_HEIGHT = 1.2F;
     public static final float KNEEL_EYE = 1.0F;
     /** Prone roll: length, ticks; lateral travel, blocks. */
@@ -32,6 +36,8 @@ public final class StanceLogic {
     public static final double ROLL_DISTANCE = 1.0;
     /** Height / side easing, steps per tick. */
     public static final float STEP_RATE = 0.15F, SIDE_RATE = 0.2F;
+    /** Posture transition, per tick: upright pair, into / out of lying ({@link #LIE_RATE} = tilt). */
+    public static final float UPRIGHT_RATE = 1.0F / 5.0F, LIE_RATE = 1.0F / 12.0F;
     /** Box height, eye height by level - minLevel: STAND low / mid / normal, KNEEL low / normal / high, PRONE. */
     static final float[] STAND_HEIGHT = {1.4F, 1.6F}, STAND_EYE = {1.22F, 1.42F};
     static final float[] KNEEL_HEIGHTS = {1.0F, KNEEL_HEIGHT, 1.4F}, KNEEL_EYES = {0.8F, KNEEL_EYE, 1.2F};
@@ -136,6 +142,30 @@ public final class StanceLogic {
         return !adsOnly.equals(r) && validate(p, s, adsOnly) ? adsOnly : null;
     }
 
+    static float transitionRate(Posture from, Posture to) {
+        return from.lying() == to.lying() && from != Posture.DOWNED && to != Posture.DOWNED ? UPRIGHT_RATE : LIE_RATE;
+    }
+
+    /** Upright and still: {@link #TURN_START} hysteresis; else {@link #stepBodyYaw(float, float, Posture)}. */
+    static float stepBodyYaw(StanceState s, float cameraYaw, boolean moving) {
+        Posture eff = s.effective();
+        if (moving || eff.lying()) {
+            s.turning = false;
+            return stepBodyYaw(s.bodyYaw, cameraYaw, eff);
+        }
+        float gap = Mth.wrapDegrees(cameraYaw - s.bodyYaw);
+        s.turning |= Math.abs(gap) > TURN_START;
+        if (!s.turning) {
+            return s.bodyYaw;
+        }
+        float next = s.bodyYaw + Mth.clamp(gap, -TURN_RATE, TURN_RATE);
+        gap = Mth.wrapDegrees(cameraYaw - next);
+        if (Math.abs(gap) < TURN_STOP) {
+            s.turning = false;
+        }
+        return next + Math.signum(gap) * Math.max(Math.abs(gap) - BODY_YAW_MAX_LAG, 0.0F);
+    }
+
     static float stepBodyYaw(float prev, float cameraYaw, Posture eff) {
         if (eff == Posture.DOWNED) {
             return prev;
@@ -229,7 +259,7 @@ public final class StanceLogic {
         if (suspended) {
             s.bodyYaw = p.yBodyRot;
         } else {
-            s.bodyYaw = stepBodyYaw(s.bodyYaw, p.getYRot(), s.effective());
+            s.bodyYaw = stepBodyYaw(s, p.getYRot(), s.walkSpeed > MOVING_SPEED);
             writeYaw(p, s);
         }
         resolvePose(p, s);
@@ -252,7 +282,7 @@ public final class StanceLogic {
         boolean suspended = suspended(p);
         s.bodyYawO = s.bodyYaw;
         if (p.isLocalPlayer()) {
-            s.bodyYaw = stepBodyYaw(s.bodyYaw, p.getYRot(), s.effective());
+            s.bodyYaw = stepBodyYaw(s, p.getYRot(), p.walkAnimation.speed() > MOVING_SPEED);
         } else {
             float speedO = s.walkSpeed;
             s.applyDue(p.level().getGameTime() - AhfConfig.lagCompInterpTicks());

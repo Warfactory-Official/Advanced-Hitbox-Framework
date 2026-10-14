@@ -265,13 +265,10 @@ public final class HumanoidRig {
             applyVanillaTilt(victim, rig);
         }
         if (victim instanceof Player && victim.isCrouching()) {
-            lower(rig, CROUCH_RENDER_OFFSET * victim.getScale());
+            lower(rig, StancePose.CROUCH_RENDER_OFFSET * victim.getScale());
         }
         return rig;
     }
-
-    /** {@code PlayerRenderer.getRenderOffset} while crouching (KNEEL included), outermost render translate. */
-    static final double CROUCH_RENDER_OFFSET = 2.0 / 16.0;
 
     private static void lower(LocalRig rig, double dy) {
         for (LocalRig.Slot slot : LocalRig.SLOTS) {
@@ -300,27 +297,12 @@ public final class HumanoidRig {
         layer(sel.set(), sel.upper(), v, whole, walk);
         layer(sel.set(), GunPoses.EMPTY, v, whole, walk);
         GunPoses.applyOnce(e, v, whole);
-        double[] r = new double[3];
+        double lie = GunPoses.lie(e, 1.0F);
         for (int b = 0; b < parts.length; b++) {
+            GunPoses.adjust(e, 1.0F, lie, b, v[b]);
             parts[b].set(v[b]);
         }
-        for (int b : new int[]{PoseClip.HEAD, PoseClip.RIGHT_ARM, PoseClip.LEFT_ARM}) {
-            Part p = parts[b];
-            r[0] = p.xRot;
-            r[1] = p.yRot;
-            r[2] = p.zRot;
-            GunPoses.adjust(e, 1.0F, sel.lying(), b, r);
-            p.xRot = r[0];
-            p.yRot = r[1];
-            p.zRot = r[2];
-        }
-        r[0] = whole[3];
-        r[1] = whole[4];
-        r[2] = whole[5];
-        GunPoses.adjust(e, 1.0F, sel.lying(), PoseClip.BODY, r);
-        whole[3] = r[0];
-        whole[4] = r[1];
-        whole[5] = r[2];
+        GunPoses.adjust(e, 1.0F, lie, PoseClip.BODY, whole);
     }
 
     private static void layer(Identifier set, @Nullable String name, double[][] v, double[] whole, double walk) {
