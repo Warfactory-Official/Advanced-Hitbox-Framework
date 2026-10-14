@@ -110,4 +110,13 @@ class PoseClipTest {
                 {"0.0": {"post": [1, 2, 3], "lerp_mode": "catmullrom"}}}}}}}""").getAsJsonObject();
         assertThrows(IllegalArgumentException.class, () -> PoseClip.parseFile(bad));
     }
+
+    @Test
+    void fadeInSecondsElseDefault() {
+        Map<String, PoseClip> c = PoseClip.parseFile(JsonParser.parseString("""
+                {"animations": {"quick": {"animation_length": 0.5, "fade_in": 0.1, "bones": {}},
+                  "plain": {"animation_length": 0.5, "bones": {}}}}""").getAsJsonObject());
+        assertEquals(2, c.get("quick").fadeTicks);
+        assertEquals(PoseClip.FADE_TICKS, c.get("plain").fadeTicks);
+    }
 }

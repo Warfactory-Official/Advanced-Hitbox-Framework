@@ -38,8 +38,6 @@ public final class GunPoses {
     static final double STEP_LIFT = 0.35;
     /** Vanilla limb cycle, walk-position units ({@code cos(pos * 0.6662)}). */
     public static final double STRIDE = 2.0 * Math.PI / 0.6662;
-    /** TACZ layer fade, ticks. */
-    public static final int FADE_TICKS = 8;
 
     /** One-shot upper-body clips (TACZ {@code playOnceAnimation}). */
     public enum Once {
@@ -170,7 +168,10 @@ public final class GunPoses {
         ONCE.put(e, new Playing(sel.set(), name, now));
     }
 
-    /** Server rig: the playing one-shot over {@code parts} + {@code whole}, faded in as the render. */
+    /**
+     * Server rig: the playing one-shot over {@code parts} + {@code whole}, faded in ({@link PoseClip#fadeTicks}) as
+     * the render.
+     */
     public static void applyOnce(LivingEntity e, double[][] parts, double[] whole) {
         Playing cur = e.level() instanceof ServerLevel ? ONCE.get(e) : null;
         if (cur == null) {
@@ -182,7 +183,7 @@ public final class GunPoses {
             ONCE.remove(e);
             return;
         }
-        float w = PoseClip.fadeIn(t, FADE_TICKS);
+        float w = PoseClip.fadeIn(t, c.fadeTicks);
         double[] v = new double[PoseClip.CHANNELS];
         for (int b = 0; b <= PoseClip.BODY; b++) {
             double[] in = b == PoseClip.BODY ? whole : parts[b];

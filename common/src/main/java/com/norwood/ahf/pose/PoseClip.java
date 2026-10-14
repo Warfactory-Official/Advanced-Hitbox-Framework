@@ -31,19 +31,24 @@ public final class PoseClip {
             {0, 0, 0}, {0, 0, 0}, {-5, 2, 0}, {5, 2, 0}, {-1.9F, 12, 0.1F}, {1.9F, 12, 0.1F}, {0, 0, 0}, {0, 0, 0},
             {0, 0, 0}};
     private static final float DEG = 0.01745329251F;
+    /** TACZ layer fade, ticks. */
+    public static final int FADE_TICKS = 8;
 
     public final String name;
     public final int endTick;
     public final int stopTick;
     public final boolean looped;
     public final int returnTick;
+    /** One-shot fade-in, ticks: {@code fade_in} (s, divergence), else {@link #FADE_TICKS}. */
+    public final int fadeTicks;
     /** [bone][channel], null = channel not animated (incoming value kept). */
     final Track[][] tracks = new Track[BONES.length][CHANNELS];
     /** Rest frame (tick 0, delta 0) per bone x channel; NaN = not animated. */
     private final double[] rest = new double[BONES.length * CHANNELS];
 
-    private PoseClip(String name, int endTick, boolean looped, int returnTick) {
+    private PoseClip(String name, int endTick, boolean looped, int returnTick, int fadeTicks) {
         this.name = name;
+        this.fadeTicks = fadeTicks;
         this.endTick = Math.max(1, endTick);
         this.stopTick = this.endTick + 3;
         this.looped = looped;
@@ -97,7 +102,8 @@ public final class PoseClip {
             looped = true;
             read = true;
         }
-        PoseClip c = new PoseClip(name.toLowerCase(Locale.ENGLISH), end, looped, ret);
+        int fade = node.has("fade_in") ? Math.max(1, Math.round(node.get("fade_in").getAsFloat() * 20)) : FADE_TICKS;
+        PoseClip c = new PoseClip(name.toLowerCase(Locale.ENGLISH), end, looped, ret, fade);
         if (read) {
             for (Map.Entry<String, JsonElement> b : node.getAsJsonObject("bones").entrySet()) {
                 if (b.getKey().endsWith("_bend")) {
