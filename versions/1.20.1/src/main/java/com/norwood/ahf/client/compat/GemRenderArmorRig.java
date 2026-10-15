@@ -20,15 +20,16 @@ import java.util.WeakHashMap;
 
 /**
  * GemRender armour on the jointed body. Import: each unskinned limb/body node gains {@code <node>.ahf_ring} +
- * {@code <node>.ahf_bent} joints, vertices weighted across the body's cut. Draw: root nodes + joints set from
+ * {@code <node>.ahf_bent} joints; triangles sliced at the body's cut plane, vertices rigid / ring (on the plane) /
+ * bent = the body mesh's own split (a weight band != body => armour shears through the bent skin). Draw: root nodes + joints set from
  * {@link BodyRenderer} frames. Space: glTF = {@code S} model, {@code S = diag(-1, -1, 1)}; node rest translation
  * {@code r} = bone origin; part space = {@code S r - p}, {@code p} = wide-body rest pivot.
  */
 public final class GemRenderArmorRig implements ArmorRig {
 
     public static final String RING = ".ahf_ring", BENT = ".ahf_bent";
-    /** Weight band half-width, px: rigid -> ring -> bent across the cut. */
-    private static final float BAND = 2;
+    /** |d| below, blocks => on the cut plane (ring). */
+    private static final float ON = 1e-5F;
     /** Per {@link GemRenderArmorModel#PARTS}: rigid, ring, bent; ring null = unsplit. */
     private static final Joint[][] JOINTS = {
             {Joint.HEAD, null, null},
@@ -71,27 +72,17 @@ public final class GemRenderArmorRig implements ArmorRig {
             float cut = (mesh.pivot(j[1], 1) - mesh.pivot(j[0], 1)) / 16;
             float py = mesh.pivot(j[0], 1) / 16;
             float sign = j[0] == Joint.BODY ? -1 : 1;
-            float band = BAND / 16;
             Vector3f v = new Vector3f();
-            rig.weigh(owner, (x, y, z, out, w) -> {
+            RigPatch.Plane plane = (x, y, z) -> {
                 restRot.transform(v.set(x, y, z));
-                float d = sign * (-(r[1] + v.y) - py - cut);
-                float s = (d + band) / (2 * band);
-                if (s <= 0) {
-                    out[0] = owner;
-                    w[0] = 1;
-                    return 1;
-                }
-                if (s >= 1) {
-                    out[0] = bent;
-                    w[0] = 1;
-                    return 1;
-                }
-                out[0] = ring;
-                out[1] = s < 0.5F ? owner : bent;
-                w[1] = s < 0.5F ? 1 - 2 * s : 2 * s - 1;
-                w[0] = 1 - w[1];
-                return 2;
+                return sign * (-(r[1] + v.y) - py - cut);
+            };
+            rig.slice(owner, plane);
+            rig.weigh(owner, (x, y, z, out, w) -> {
+                float d = plane.distance(x, y, z);
+                out[0] = d < -ON ? owner : d > ON ? bent : ring;
+                w[0] = 1;
+                return 1;
             });
         }
     }

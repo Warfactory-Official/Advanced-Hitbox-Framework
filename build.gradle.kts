@@ -71,8 +71,8 @@ prism {
                 configurations.all {
                     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
                 }
-                dependencies.add("compileOnly", "com.wf.gemrender:gemrender-1.20.1:0.1.16-SNAPSHOT")
-                dependencies.add("testImplementation", "com.wf.gemrender:gemrender-1.20.1:0.1.16-SNAPSHOT")
+                dependencies.add("compileOnly", "com.wf.gemrender:gemrender-1.20.1:0.1.17-SNAPSHOT")
+                dependencies.add("testImplementation", "com.wf.gemrender:gemrender-1.20.1:0.1.17-SNAPSHOT")
                 val forge = extensions.getByType<net.neoforged.moddevgradle.legacyforge.dsl.LegacyForgeExtension>()
                 forge.addModdingDependenciesTo(gametest)
                 forge.addModdingDependenciesTo(sourceSets.getByName("test"))
@@ -141,8 +141,8 @@ prism {
                 configurations.all {
                     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
                 }
-                dependencies.add("compileOnly", "com.wf.gemrender:gemrender-1.21.1:0.1.16-SNAPSHOT")
-                dependencies.add("testImplementation", "com.wf.gemrender:gemrender-1.21.1:0.1.16-SNAPSHOT")
+                dependencies.add("compileOnly", "com.wf.gemrender:gemrender-1.21.1:0.1.17-SNAPSHOT")
+                dependencies.add("testImplementation", "com.wf.gemrender:gemrender-1.21.1:0.1.17-SNAPSHOT")
                 val neoForge = extensions.getByType<NeoForgeExtension>()
                 neoForge.addModdingDependenciesTo(gametest)
                 val mod = neoForge.mods.getByName("ahf")
