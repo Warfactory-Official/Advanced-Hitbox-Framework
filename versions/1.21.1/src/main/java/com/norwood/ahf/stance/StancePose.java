@@ -134,7 +134,7 @@ public final class StancePose {
         if (blend < 1.0) {
             Posture from = s.from();
             // Own player: LocalPlayer.isCrouching = sneak key => no vanilla crouch in KNEEL to undo.
-            double crouch = p.isLocalPlayer() ? 0.0
+            double crouch = Replay.ownerPredicts(p, s) ? 0.0
                     : (from == Posture.KNEEL ? 1.0 : 0.0) - (p.isCrouching() ? 1.0 : 0.0);
             pose.leaving(new StancePose(from, from.lying() ? 0.0 : lean, s.fromHeight(), s.fromSide(), 0, 0.0,
                     p.getId(), from == Posture.PRONE && GunPoses.hasLying(p)), smooth(blend), crouch,

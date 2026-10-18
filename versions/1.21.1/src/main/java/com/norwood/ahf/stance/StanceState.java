@@ -41,6 +41,8 @@ public final class StanceState {
 
     boolean downed;
     boolean crawl;
+    /** Client, owner: the stream carries yaw / walk deltas for it (a recording made with the owner fully synced). */
+    boolean fullFeed;
     float bodyYaw;
     long stamp;
     /** Vanilla {@code WalkAnimationState} recurrence: server-computed, remote trackers adopt it. */

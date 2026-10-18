@@ -147,6 +147,9 @@ public final class StanceLogic {
     }
 
     /** Upright and still: {@link #TURN_START} hysteresis; else {@link #stepBodyYaw(float, float, Posture)}. */
+    /** A replay's applied stamp this far past its view tick => the replay went back in time. */
+    static final int REPLAY_REWIND_TICKS = 20;
+
     static float stepBodyYaw(StanceState s, float cameraYaw, boolean moving) {
         Posture eff = s.effective();
         if (moving || eff.lying()) {
@@ -204,7 +207,7 @@ public final class StanceLogic {
         } else if (s.ownsForcedPose) {
             s.ownsForcedPose = false;
             p.setForcedPose(null);
-            if (p.level().isClientSide && !p.isLocalPlayer()) {
+            if (p.level().isClientSide && !Replay.ownerPredicts(p, s)) {
                 // RemotePlayer.updatePlayerPose is a no-op; the synced server pose was overwritten above.
                 p.setPose(remotePose(p));
             } else {
@@ -281,11 +284,17 @@ public final class StanceLogic {
         }
         boolean suspended = suspended(p);
         s.bodyYawO = s.bodyYaw;
-        if (p.isLocalPlayer()) {
+        if (Replay.ownerPredicts(p, s)) {
             s.bodyYaw = stepBodyYaw(s, p.getYRot(), p.walkAnimation.speed() > MOVING_SPEED);
         } else {
             float speedO = s.walkSpeed;
-            s.applyDue(p.level().getGameTime() - AhfConfig.lagCompInterpTicks());
+            long view = p.level().getGameTime() - AhfConfig.lagCompInterpTicks();
+            if (s.stamp - view > REPLAY_REWIND_TICKS && Replay.active()) {
+                // The replay seeked back: what is queued is from the time the clock has left, and would apply late.
+                s.pending.clear();
+                s.stamp = view;
+            }
+            s.applyDue(view);
             s.reckonWalk();
             if (s.walkSynced) {
                 // Vanilla's own update (from the lerped position) ran in this tick: replaced by the server's walk.
@@ -302,7 +311,7 @@ public final class StanceLogic {
         } else {
             writeYaw(p, s);
         }
-        if (p.isLocalPlayer() && s.rolling()) {
+        if (Replay.ownerPredicts(p, s) && s.rolling()) {
             rollMotion(p, s);
         }
         resolvePose(p, s);
