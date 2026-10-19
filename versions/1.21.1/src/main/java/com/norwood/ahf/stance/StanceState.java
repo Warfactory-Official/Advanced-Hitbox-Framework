@@ -24,6 +24,13 @@ public final class StanceState {
     static final float WALK_SPEED_EPSILON = 0.01F;
     static final float WALK_POS_EPSILON = 0.05F;
     private static final int MAX_PENDING = 64;
+    /**
+     * An update stamped this far before the one applied last is a stale copy, not a late one: live stamps only grow.
+     * A Flashback recording carries such copies (the replay's initial state, stamped at its first tick, every tick);
+     * applied, each puts the body yaw and the walk back to that start state. A replay that seeks back resets the
+     * stamp ({@code StanceLogic.REPLAY_REWIND_TICKS}) before older updates arrive.
+     */
+    static final int STALE_UPDATE_TICKS = 40;
 
     Posture posture = Posture.STAND;
     int level;
@@ -387,6 +394,9 @@ public final class StanceState {
     }
 
     void apply(Update u) {
+        if (stamp - u.stamp > STALE_UPDATE_TICKS) {
+            return;
+        }
         stamp = u.stamp;
         bodyYaw = u.bodyYaw;
         if ((u.mask & WALK) != 0) {

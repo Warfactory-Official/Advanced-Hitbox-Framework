@@ -258,6 +258,45 @@ class StanceMathTest {
         assertFalse(owner.downed);
     }
 
+    /**
+     * A recording interleaves a stale copy (the replay's initial yaw + walk, stamped at its first tick) with every
+     * real update: the body must keep following the real ones.
+     */
+    @Test
+    void staleCopiesDoNotPullARemoteBackToItsStartState() {
+        StanceState remote = new StanceState();
+        StanceState server = new StanceState();
+        for (int t = 1000; t < 1040; t++) {
+            server.bodyYaw = -50.0F + (t - 1000);
+            server.walkPos = 10.0F + (t - 1000);
+            server.walkSpeed = 0.6F;
+            server.stamp = t;
+            remote.enqueue(roundTrip(server, StanceState.WALK));
+            StanceState stale = new StanceState();
+            stale.bodyYaw = 7.03125F;
+            stale.stamp = 55;
+            remote.enqueue(roundTrip(stale, StanceState.WALK));
+            remote.applyDue(t);
+            assertEquals(-50.0F + (t - 1000), remote.bodyYaw, "tick " + t);
+            assertEquals(10.0F + (t - 1000), remote.walkPos, "walk at tick " + t);
+        }
+    }
+
+    @Test
+    void aSmallRewindIsStillApplied() {
+        StanceState remote = new StanceState();
+        StanceState server = new StanceState();
+        server.bodyYaw = 10.0F;
+        server.stamp = 500;
+        remote.enqueue(roundTrip(server, StanceState.YAW));
+        remote.applyDue(500);
+        server.bodyYaw = 20.0F;
+        server.stamp = 490;
+        remote.enqueue(roundTrip(server, StanceState.YAW));
+        remote.applyDue(500);
+        assertEquals(20.0F, remote.bodyYaw);
+    }
+
     @Test
     void remoteAppliesAtViewTimeInOrder() {
         StanceState remote = new StanceState();
