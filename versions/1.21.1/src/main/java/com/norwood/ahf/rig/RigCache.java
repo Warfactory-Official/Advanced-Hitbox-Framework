@@ -37,7 +37,7 @@ public final class RigCache {
                 return hinted;
             }
         }
-        HumanoidRig.LocalRig rig = HumanoidRig.compute(victim);
+        HumanoidRig.LocalRig rig = HumanoidRig.compute(victim, tick);
         put(key(victim), tick, rig);
         return rig;
     }

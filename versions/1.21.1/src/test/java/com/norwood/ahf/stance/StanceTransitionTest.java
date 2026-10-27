@@ -68,11 +68,11 @@ class StanceTransitionTest {
     /** Blend 0 = the pose left (its crouch restored), 1 = the new pose. */
     @Test
     void blendEndsAreTheTwoPoses() {
-        StancePose kneel = new StancePose(Posture.KNEEL, 0, 0, 0, 0, 0, 0, false);
+        StancePose kneel = new StancePose(Posture.KNEEL, 0, 0, 0, 0, 0, false);
         double[] in = {-5, 2, 0, -0.3, 0.2, 0.1, 0, 0};
         double[] a = in.clone();
-        new StancePose(Posture.STAND, 0, 0, 0, 0, 0, 0, false)
-                .leaving(new StancePose(Posture.KNEEL, 0, 0, 0, 0, 0, 0, false), 0.0, 1.0, true)
+        new StancePose(Posture.STAND, 0, 0, 0, 0, 0, false)
+                .leaving(new StancePose(Posture.KNEEL, 0, 0, 0, 0, 0, false), 0.0, 1.0, true)
                 .apply(PoseClip.RIGHT_ARM, a);
         double[] crouched = in.clone();
         crouched[1] += 3.2;
@@ -80,13 +80,13 @@ class StanceTransitionTest {
         kneel.apply(PoseClip.RIGHT_ARM, crouched);
         assertArray(crouched, a, "blend 0 = kneel with vanilla crouch");
         double[] b = in.clone();
-        new StancePose(Posture.STAND, 0, 0, 0, 0, 0, 0, false)
-                .leaving(new StancePose(Posture.KNEEL, 0, 0, 0, 0, 0, 0, false), 1.0, 1.0, true)
+        new StancePose(Posture.STAND, 0, 0, 0, 0, 0, false)
+                .leaving(new StancePose(Posture.KNEEL, 0, 0, 0, 0, 0, false), 1.0, 1.0, true)
                 .apply(PoseClip.RIGHT_ARM, b);
         assertArray(in, b, "blend 1 = stand");
         double[] w = new double[PoseClip.CHANNELS];
-        new StancePose(Posture.STAND, 0, 0, 0, 0, 0, 0, false)
-                .leaving(new StancePose(Posture.KNEEL, 0, 0, 0, 0, 0, 0, false), 0.0, 1.0, true).body(w);
+        new StancePose(Posture.STAND, 0, 0, 0, 0, 0, false)
+                .leaving(new StancePose(Posture.KNEEL, 0, 0, 0, 0, 0, false), 0.0, 1.0, true).body(w);
         assertEquals(-kneel.drop() - StancePose.CROUCH_RENDER_OFFSET, w[1], EPS, "kneel drop + render offset");
         assertTrue(kneel.drop() > 0.0);
     }

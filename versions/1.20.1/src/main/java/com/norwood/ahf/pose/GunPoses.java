@@ -21,8 +21,11 @@ import java.util.WeakHashMap;
 /**
  * Gun-hold clip selection (TACZ {@code AnimationManager} + {@code AdjustmentYRotModifier}), shared by the rig
  * ({@code HumanoidRig}: loop clips at rest frame) and the render layers of the mod owning the pose set (full clips).
- * Divergences from TACZ: KNEEL => no lower clip (AHF kneel legs); lying = AHF PRONE only; a clip missing from the set
- * falls back along {@link #fallback} instead of leaving the previous one playing.
+ * Divergences from TACZ: KNEEL / lowered STAND => no lower clip (AHF level legs; stacked bent knees sank the head
+ * below KNEEL high); lying = AHF PRONE only; a clip missing from the set
+ * falls back along {@link #fallback} instead of leaving the previous one playing; moving lowers by walk
+ * direction ({@link #directed}); crouched (vanilla sneak, KNEEL) idle / aim / fire / reload uppers
+ * {@code crouch_*}.
  */
 public final class GunPoses {
 
@@ -54,7 +57,8 @@ public final class GunPoses {
     }
 
     /** Clips of one moment; {@code lower} null => none (lying, KNEEL, or absent from the set). */
-    public record Selection(ResourceLocation set, @Nullable String lower, @Nullable String upper, boolean lying) {
+    public record Selection(ResourceLocation set, @Nullable String lower, @Nullable String upper, boolean lying,
+                            boolean crouch) {
     }
 
     /** Null => no gun pose: no set for the held item, or sleeping / climbing / swimming / elytra. */
@@ -70,29 +74,52 @@ public final class GunPoses {
         boolean moving = !flying && limbSwingAmount > MOVING;
         boolean sprint = !flying && e.isSprinting();
         Posture posture = e instanceof Player p ? AhfStance.posture(p) : Posture.STAND;
+        if (posture == Posture.DOWNED) {
+            return null;
+        }
         boolean lying = posture == Posture.PRONE && e.getPose() == Pose.SWIMMING;
         if (lying) {
             String upper = aiming ? moving ? "lie_move" : "lie_aim" : sprint || moving ? "lie_move" : "lie";
             upper = resolve(set, upper);
-            return upper == null ? null : new Selection(set, null, upper, true);
+            return upper == null ? null : new Selection(set, null, upper, true, false);
         }
         boolean crouch = e.getPose() == Pose.CROUCHING;
         String lower;
-        if (posture == Posture.KNEEL) {
+        if (posture == Posture.KNEEL || posture == Posture.STAND && AhfStance.level(e) < 0) {
             lower = null;
         } else if (e.getVehicle() != null) {
             lower = "ride_lower";
         } else if (flying) {
             lower = "hold_lower";
         } else if (sprint || moving) {
-            lower = crouch ? "crouch_walk_lower" : sprint ? "run_lower" : "walk_lower";
+            lower = sprint && !crouch ? "run_lower" : directed(crouch ? "crouch_walk" : "walk", walkDir(e));
         } else {
             lower = crouch ? "crouch_lower" : "hold_lower";
         }
-        String upper = aiming ? "aim_upper"
+        String upper = aiming ? crouch ? "crouch_aim_upper" : "aim_upper"
                 : sprint || moving ? crouch ? "crouch_walk_upper" : sprint ? "run_upper" : "walk_upper"
-                : "hold_upper";
-        return new Selection(set, lower == null ? null : resolve(set, lower), resolve(set, upper), false);
+                : crouch ? "crouch_upper" : "hold_upper";
+        return new Selection(set, lower == null ? null : resolve(set, lower), resolve(set, upper), false, crouch);
+    }
+
+    /** {@code base} + {@code _back|_left|_right} by {@link StanceState#walkDir} + {@code _lower}. */
+    static String directed(String base, int dir) {
+        return base + switch (dir) {
+            case StanceState.WALK_BACK -> "_back";
+            case StanceState.WALK_LEFT -> "_left";
+            case StanceState.WALK_RIGHT -> "_right";
+            default -> "";
+        } + "_lower";
+    }
+
+    public static int walkDir(LivingEntity e) {
+        if (e instanceof Player p) {
+            StanceState s = AhfStance.get(p);
+            if (s != null) {
+                return s.walkDir();
+            }
+        }
+        return StanceState.WALK_FORWARD;
     }
 
     /** {@code name} or its first present fallback; null => none. */
@@ -110,7 +137,14 @@ public final class GunPoses {
     static String fallback(String name) {
         return switch (name) {
             case "crouch_walk_upper", "run_upper" -> "walk_upper";
+            case "crouch_upper" -> "hold_upper";
+            case "crouch_aim_upper" -> "aim_upper";
+            case "crouch_aim_fire_upper" -> "aim_fire_upper";
+            case "crouch_normal_fire_upper" -> "normal_fire_upper";
+            case "crouch_reload_upper" -> "reload_upper";
             case "walk_upper", "aim_upper" -> "hold_upper";
+            case "walk_back_lower", "walk_left_lower", "walk_right_lower" -> "walk_lower";
+            case "crouch_walk_back_lower", "crouch_walk_left_lower", "crouch_walk_right_lower" -> "crouch_walk_lower";
             case "crouch_walk_lower" -> "crouch_lower";
             case "run_lower" -> "walk_lower";
             case "walk_lower", "crouch_lower", "ride_lower" -> "hold_lower";
@@ -136,14 +170,15 @@ public final class GunPoses {
         return from + f * (clip.endTick - from + 1);
     }
 
-    /** TACZ one-shot clip name for {@code kind} in {@code sel}; null => none. */
+    /** One-shot clip for {@code kind} in {@code sel}, {@link #resolve}d; null => none. */
     @Nullable
     public static String onceClip(Selection sel, boolean aiming, Once kind) {
-        return switch (kind) {
+        String crouch = sel.crouch() ? "crouch_" : "";
+        return resolve(sel.set(), switch (kind) {
             case FIRE -> sel.lying() ? aiming ? "lie_aim_fire" : "lie_normal_fire"
-                    : aiming ? "aim_fire_upper" : "normal_fire_upper";
-            case RELOAD -> sel.lying() ? "lie_reload" : "reload_upper";
-        };
+                    : crouch + (aiming ? "aim_fire_upper" : "normal_fire_upper");
+            case RELOAD -> sel.lying() ? "lie_reload" : crouch + "reload_upper";
+        });
     }
 
     /**
@@ -235,13 +270,15 @@ public final class GunPoses {
      * channel group (position, rotation, bend) reads only its own input. Riding => pitch only.
      * <ul>
      * <li>{@code body}: +(0, -yaw, 0) standing, +(0, 0, -yaw) lying (split by {@code lie}, 0..1: follows the tilt);
-     * waist bend {@link #SPINE_SHARE} of the pitch (lying: looking up only).</li>
-     * <li>{@code head}, arms: + the rest of the pitch on x; lying, pitch down capped {@link #LIE_PITCH_DOWN}.</li>
-     * <li>legs: turned back to the body yaw about the pelvis (planted while the upper body aims); step lift while
-     * the body yaw turns.</li>
+     * waist bend {@link #SPINE_SHARE} of the pitch about the parent x ({@code torso}: the torso part's channels,
+     * read for {@code body} only; lying: looking up only).</li>
+     * <li>{@code head}, arms: the rest of the pitch about the parent x (Euler add = about the part's own x: off-plane
+     * arms swing the held gun sideways); lying, pitch down capped {@link #LIE_PITCH_DOWN}.</li>
+     * <li>legs: turned back to the body yaw about the pelvis (planted while the upper body aims), about the parent
+     * vertical; step lift while the body yaw turns.</li>
      * </ul>
      */
-    public static void adjust(LivingEntity e, float pt, double lie, int bone, double[] v) {
+    public static void adjust(LivingEntity e, float pt, double lie, int bone, double[] v, @Nullable double[] torso) {
         boolean riding = e.getVehicle() != null;
         double pitch = pitch(e, pt) * DEG;
         if (pitch > 0.0) {
@@ -253,16 +290,16 @@ public final class GunPoses {
             case PoseClip.BODY -> {
                 v[4] += yaw * (1.0 - lie);
                 v[5] += yaw * lie;
-                v[PoseClip.BEND] += spine;
+                PoseMath.addTorsoBend(v, spine, torso);
             }
-            case PoseClip.HEAD, PoseClip.RIGHT_ARM, PoseClip.LEFT_ARM -> v[3] += pitch - spine;
+            case PoseClip.HEAD, PoseClip.RIGHT_ARM, PoseClip.LEFT_ARM -> PoseMath.preRotateX(v, pitch - spine);
             case PoseClip.RIGHT_LEG, PoseClip.LEFT_LEG -> {
                 double legYaw = yaw * (1.0 - lie);
                 double c = Math.cos(legYaw), sn = Math.sin(legYaw);
                 double x = v[0], z = v[2];
                 v[0] = x * c + z * sn;
                 v[2] = -x * sn + z * c;
-                v[4] += legYaw;
+                PoseMath.preRotateY(v, legYaw);
                 float turn = Math.abs(Mth.wrapDegrees(e.yBodyRot - e.yBodyRotO));
                 double phase = Math.sin(4.0 * Mth.rotLerp(pt, e.yBodyRotO, e.yBodyRot) * DEG);
                 double lift = STEP_LIFT * Math.min(turn / StanceLogic.TURN_RATE, 1.0F) * (1.0 - lie);

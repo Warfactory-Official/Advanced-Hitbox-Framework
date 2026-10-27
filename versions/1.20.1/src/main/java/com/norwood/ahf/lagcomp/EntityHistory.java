@@ -61,6 +61,11 @@ public final class EntityHistory {
         return level.getGameTime() + 1L;
     }
 
+    /** {@link #broadcastTick} of the next server tick: state written now but stamped as if synced then. */
+    public static long nextBroadcastTick(ServerLevel level) {
+        return inTick ? tickKey + 1L : broadcastTick(level);
+    }
+
     /** First {@code LevelTickEvent.Pre} of a server tick: time not yet advanced iff the level ticks time. */
     public static void beginTick(ServerLevel level) {
         if (inTick) {

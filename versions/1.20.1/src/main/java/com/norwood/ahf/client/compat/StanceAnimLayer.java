@@ -85,10 +85,16 @@ public final class StanceAnimLayer implements IAnimation {
             return value;
         }
         if (part.equals("body")) {
+            // layers' value in: transition / climb clips mix absolute (zeroed + value after => off by weight x value)
             java.util.Arrays.fill(body, 0.0);
+            body[o] = value.getX();
+            body[o + 1] = value.getY();
+            if (o != PoseClip.BEND_AXIS) {
+                body[o + 2] = value.getZ();
+            }
             p.body(body);
-            return new Vec3f(value.getX() + (float) body[o], value.getY() + (float) body[o + 1],
-                    o == PoseClip.BEND_AXIS ? value.getZ() : value.getZ() + (float) body[o + 2]);
+            return new Vec3f((float) body[o], (float) body[o + 1],
+                    o == PoseClip.BEND_AXIS ? value.getZ() : (float) body[o + 2]);
         }
         int bone = PoseClip.bone(part);
         if (bone < 0) {

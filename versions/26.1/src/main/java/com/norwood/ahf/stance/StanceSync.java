@@ -38,7 +38,7 @@ final class StanceSync implements AttachmentSyncHandler<StanceState> {
             StanceState s = new StanceState();
             s.apply(u);
             s.bodyYawO = s.bodyYaw;
-            s.lean = s.leanO = s.effective().lying() ? 0.0F : s.leanTarget;
+            s.lean = s.leanO = s.effective().leans() ? s.leanTarget : 0.0F;
             s.height = s.heightO = s.effectiveLevel();
             s.sideAmount = s.sideAmountO = s.effectiveSide();
             return s;

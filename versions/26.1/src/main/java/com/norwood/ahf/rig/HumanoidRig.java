@@ -29,6 +29,8 @@ public final class HumanoidRig {
     private static final double UNIT = 1.0 / 16.0;
     private static final double MODEL_SCALE = 0.9375;
     private static final double Y_SHIFT = 1.501;
+    /** Vanilla eye minus the drawn neck (head pivot). */
+    private static final double EYE_ABOVE_NECK = 1.62 - MODEL_SCALE * Y_SHIFT;
 
     private static final double DEG2RAD = Math.PI / 180.0;
     private static final double LIMB_FREQ = 0.6662;
@@ -205,6 +207,39 @@ public final class HumanoidRig {
     }
 
     private static LocalRig compute(LivingEntity victim, AnimSampler sampler) {
+        return compute(victim, sampler, StancePose.of(victim, 1.0F), 1.0F, AhfConfig.limbBoxPadding());
+    }
+
+    /**
+     * Drawn eye height (blocks above the feet, unscaled) of {@code victim} posed with {@code stance} (null => none) at
+     * render time {@code pt}: neck + {@link #EYE_ABOVE_NECK} straight up (gun holds hunch the chest 75 deg, head level).
+     */
+    public static double eye(LivingEntity victim, @Nullable StancePose stance, float pt) {
+        LocalRig rig = compute(victim, victim.level().isClientSide() ? animSampler : null, stance, pt, 0.0);
+        Obb h = rig.head;
+        return h.center().y + h.axisY().y * h.half().y + EYE_ABOVE_NECK;
+    }
+
+    /**
+     * Lowest head / torso / leg point (blocks above the feet; unpadded) of {@code victim} posed with {@code stance}
+     * ({@link StancePose#body} floor contact) at render time {@code pt}. Arms out: hand targets re-solve them after.
+     */
+    public static double floor(LivingEntity victim, StancePose stance, float pt) {
+        LocalRig rig = compute(victim, victim.level().isClientSide() ? animSampler : null, stance, pt, 0.0);
+        double y = Double.POSITIVE_INFINITY;
+        for (LocalRig.Slot slot : LocalRig.SLOTS) {
+            if (slot.limb == HitboxPart.RIGHT_ARM || slot.limb == HitboxPart.LEFT_ARM) {
+                continue;
+            }
+            Obb o = slot.get(rig);
+            y = Math.min(y, o.center().y - Math.abs(o.axisX().y) * o.half().x - Math.abs(o.axisY().y) * o.half().y
+                    - Math.abs(o.axisZ().y) * o.half().z);
+        }
+        return y;
+    }
+
+    private static LocalRig compute(LivingEntity victim, AnimSampler sampler, @Nullable StancePose stancePose,
+                                    float pt, double pad) {
         RigTuning.RigPose pose = resolvePose(victim);
         RigTuning.HandAction hand = resolveHandAction(victim);
 
@@ -215,7 +250,7 @@ public final class HumanoidRig {
         Part rightArm = part(HitboxPart.RIGHT_ARM, pose, hand);
         Part leftArm = part(HitboxPart.LEFT_ARM, pose, hand);
 
-        setupAnim(victim, head, body, rightArm, leftArm, rightLeg, leftLeg);
+        setupAnim(victim, pt, head, body, rightArm, leftArm, rightLeg, leftLeg);
         // PlayerAnimator body transform, PA frame: x, y, z (blocks), pitch, yaw, roll.
         double[] whole = new double[PoseClip.CHANNELS];
         if (sampler != null) {
@@ -229,7 +264,6 @@ public final class HumanoidRig {
         } else {
             libraryPose(victim, new Part[]{head, body, rightArm, leftArm, rightLeg, leftLeg}, whole);
         }
-        StancePose stancePose = StancePose.of(victim, 1.0F);
         if (stancePose != null) {
             double[] v = new double[PoseClip.CHANNELS];
             stanceBone(stancePose, PoseClip.HEAD, head, v);
@@ -241,7 +275,6 @@ public final class HumanoidRig {
             stancePose.body(whole);
         }
 
-        double pad = AhfConfig.limbBoxPadding();
         LocalRig rig = new LocalRig();
         // Waist bend = PA body + torso bends; upper torso, head and arms turn with it (render: BodyRenderer).
         body.bendAxis += whole[PoseClip.BEND_AXIS];
@@ -260,9 +293,9 @@ public final class HumanoidRig {
 
         Stance s = AhfStances.active(victim);
         if (s != null) {
-            s.apply(victim, rig);
+            s.apply(victim, rig, pt);
         } else {
-            applyVanillaTilt(victim, rig);
+            applyVanillaTilt(victim, rig, pt);
         }
         if (victim instanceof Player && victim.isCrouching()) {
             lower(rig, StancePose.CROUCH_RENDER_OFFSET * victim.getScale());
@@ -299,10 +332,10 @@ public final class HumanoidRig {
         GunPoses.applyOnce(e, v, whole);
         double lie = GunPoses.lie(e, 1.0F);
         for (int b = 0; b < parts.length; b++) {
-            GunPoses.adjust(e, 1.0F, lie, b, v[b]);
+            GunPoses.adjust(e, 1.0F, lie, b, v[b], null);
             parts[b].set(v[b]);
         }
-        GunPoses.adjust(e, 1.0F, lie, PoseClip.BODY, whole);
+        GunPoses.adjust(e, 1.0F, lie, PoseClip.BODY, whole, v[PoseClip.TORSO]);
     }
 
     private static void layer(Identifier set, @Nullable String name, double[][] v, double[] whole, double walk) {
@@ -380,10 +413,15 @@ public final class HumanoidRig {
 
     /** Vanilla swim/elytra render tilt; a {@link Stance} replacing it calls this to keep it counted once. */
     public static void applyVanillaTilt(LivingEntity e, LocalRig rig) {
+        applyVanillaTilt(e, rig, 1.0F);
+    }
+
+    /** {@link #applyVanillaTilt(LivingEntity, LocalRig)} at render time {@code partialTick}. */
+    public static void applyVanillaTilt(LivingEntity e, LocalRig rig, float partialTick) {
         double angle;
         double shiftY = 0.0;
         double shiftZ = 0.0;
-        float swimAmount = e.getSwimAmount(1.0F);
+        float swimAmount = e.getSwimAmount(partialTick);
         if (e.isFallFlying()) {
             if (e.isAutoSpinAttack()) {
                 return;
@@ -427,10 +465,11 @@ public final class HumanoidRig {
         return new Vec3(v.x, v.y * cos - v.z * sin, v.y * sin + v.z * cos);
     }
 
-    private static void setupAnim(LivingEntity e, Part head, Part body, Part rightArm, Part leftArm,
+    private static void setupAnim(LivingEntity e, float pt, Part head, Part body, Part rightArm, Part leftArm,
                                   Part rightLeg, Part leftLeg) {
-        double limbSwing = GunPoses.walkPos(e);
-        double limbSwingAmount = Math.min(GunPoses.walkSpeed(e), 1.0);
+        boolean client = e.level().isClientSide();
+        double limbSwing = client ? e.walkAnimation.position(pt) : GunPoses.walkPos(e);
+        double limbSwingAmount = Math.min(client ? e.walkAnimation.speed(pt) : GunPoses.walkSpeed(e), 1.0);
         double ageInTicks = e.tickCount;
         double netHeadYaw = Mth.wrapDegrees(e.getYHeadRot() - e.yBodyRot);
         double headPitch = e.getXRot();

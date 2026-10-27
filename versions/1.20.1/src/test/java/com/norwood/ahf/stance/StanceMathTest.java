@@ -9,6 +9,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -40,7 +41,7 @@ class StanceMathTest {
         for (Posture posture : new Posture[]{Posture.STAND, Posture.KNEEL}) {
             double eye = posture == Posture.KNEEL ? StanceLogic.KNEEL_EYE : STAND_EYE;
             for (double lean : new double[]{-1.0, -0.4, 0.0, 0.7, 1.0}) {
-                StancePose pose = new StancePose(posture, lean, 0, 0, 0, 0, 0, false);
+                StancePose pose = new StancePose(posture, lean, 0, 0, 0, 0, false);
                 HumanoidRig.LocalRig rig = pointRig(new Vec3(0.0, eye + pose.drop(), 0.0));
                 HumanoidRig.applyWhole(rig, new double[]{0, -pose.drop(), 0, 0, 0, pose.roll, 0, 0});
                 assertVec(new Vec3(0.0, eye, 0.0).add(pose.eyeOffsetLocal(eye)), rig.head.center(),
@@ -51,7 +52,7 @@ class StanceMathTest {
 
     @Test
     void fullRightLeanMovesTheEyeRightByTheLeverArm() {
-        StancePose pose = new StancePose(Posture.STAND, 1.0, 0, 0, 0, 0, 0, false);
+        StancePose pose = new StancePose(Posture.STAND, 1.0, 0, 0, 0, 0, false);
         Vec3 off = pose.eyeOffsetLocal(STAND_EYE);
         double arm = STAND_EYE - StancePose.PIVOT_Y;
         double a = Math.toRadians(StanceLogic.LEAN_MAX_DEGREES);
@@ -63,7 +64,7 @@ class StanceMathTest {
 
     @Test
     void kneelDropsTheBodyWithoutMovingTheEye() {
-        StancePose pose = new StancePose(Posture.KNEEL, 0.0, 0, 0, 0, 0, 0, false);
+        StancePose pose = new StancePose(Posture.KNEEL, 0.0, 0, 0, 0, 0, false);
         assertVec(Vec3.ZERO, pose.eyeOffsetLocal(StanceLogic.KNEEL_EYE), "kneel eye");
         HumanoidRig.LocalRig rig = pointRig(new Vec3(0.2, 1.5, -0.1));
         HumanoidRig.applyWhole(rig, new double[]{0, -pose.drop(), 0, 0, 0, pose.roll, 0, 0});
@@ -73,7 +74,7 @@ class StanceMathTest {
 
     @Test
     void legsCounterRollSoTheyStayVertical() {
-        StancePose pose = new StancePose(Posture.STAND, 1.0, 0, 0, 0, 0, 0, false);
+        StancePose pose = new StancePose(Posture.STAND, 1.0, 0, 0, 0, 0, false);
         double[] leg = new double[PoseClip.CHANNELS];
         pose.apply(PoseClip.RIGHT_LEG, leg);
         assertEquals(-pose.roll, leg[5], EPS, "leg zRot must cancel the body roll");
@@ -102,7 +103,7 @@ class StanceMathTest {
             boolean crouch = posture == Posture.KNEEL;
             double offset = crouch ? 2.0 / 16.0 : 0.0;
             for (int level = posture.minLevel(); level <= posture.maxLevel(); level++) {
-                StancePose pose = new StancePose(posture, 0, level, 0, 0, 0, 0, false);
+                StancePose pose = new StancePose(posture, 0, level, 0, 0, 0, false);
                 double[] head = new double[PoseClip.CHANNELS];
                 head[1] = crouch ? 4.2 : 0.0;
                 pose.apply(PoseClip.HEAD, head);
@@ -125,7 +126,7 @@ class StanceMathTest {
     @Test
     void sideStepMovesBodyAndEyeTogether() {
         for (double side : new double[]{-1, 0.4, 1}) {
-            StancePose pose = new StancePose(Posture.KNEEL, 0.6, 0, side, 0, 0, 0, false);
+            StancePose pose = new StancePose(Posture.KNEEL, 0.6, 0, side, 0, 0, false);
             double eye = StanceLogic.KNEEL_EYE;
             HumanoidRig.LocalRig rig = pointRig(new Vec3(0.0, eye + pose.drop(), 0.0));
             double[] w = new double[PoseClip.CHANNELS];
@@ -134,11 +135,11 @@ class StanceMathTest {
             assertVec(new Vec3(0.0, eye, 0.0).add(pose.eyeOffsetLocal(eye)), rig.head.center(), "side " + side);
         }
         for (int side : new int[]{-1, 1}) {
-            assertEquals(side, Math.signum(new StancePose(Posture.KNEEL, 0, 0, side, 0, 0, 0, false).shift()), "direction");
+            assertEquals(side, Math.signum(new StancePose(Posture.KNEEL, 0, 0, side, 0, 0, false).shift()), "direction");
         }
-        assertEquals(new StancePose(Posture.STAND, 0, 0, 1, 0, 0, 0, false).shift(),
-                -new StancePose(Posture.STAND, 0, 0, -1, 0, 0, 0, false).shift(), EPS, "left mirrors right");
-        assertEquals(0.0, new StancePose(Posture.PRONE, 0, 0, 1, 0, 0, 0, false).shift(), EPS, "prone side = roll");
+        assertEquals(new StancePose(Posture.STAND, 0, 0, 1, 0, 0, false).shift(),
+                -new StancePose(Posture.STAND, 0, 0, -1, 0, 0, false).shift(), EPS, "left mirrors right");
+        assertEquals(0.0, new StancePose(Posture.PRONE, 0, 0, 1, 0, 0, false).shift(), EPS, "prone side = roll");
     }
 
     /**
@@ -149,7 +150,7 @@ class StanceMathTest {
     void sideStepKeepsTheFeetPlanted() {
         double rightEnd = Double.NaN;
         for (int i = 7; i >= 0; i--) {
-            StancePose pose = new StancePose(Posture.STAND, 0, 0, i / 7.0, 0, 0, 0, false);
+            StancePose pose = new StancePose(Posture.STAND, 0, 0, i / 7.0, 0, 0, false);
             double body = pose.shift() * 16.0;
             double left = foot(pose, PoseClip.LEFT_LEG, body - 1.9);
             double right = foot(pose, PoseClip.RIGHT_LEG, body + 1.9);
@@ -205,17 +206,21 @@ class StanceMathTest {
         assertEquals(1, remote.side());
     }
 
+    /** DOWNED = downed.json, absolute: still => idle rest frame whatever came in; crawling => the crawl clip. */
     @Test
-    void downedSprawlIsSeededByEntityIdOnly() {
-        double[] a = new double[PoseClip.CHANNELS];
-        double[] b = new double[PoseClip.CHANNELS];
-        double[] c = new double[PoseClip.CHANNELS];
-        new StancePose(Posture.DOWNED, 0.0, 0, 0, 0, 0, 42, false).apply(PoseClip.RIGHT_ARM, a);
-        new StancePose(Posture.DOWNED, 0.0, 0, 0, 0, 0, 42, false).apply(PoseClip.RIGHT_ARM, b);
-        new StancePose(Posture.DOWNED, 0.0, 0, 0, 0, 0, 43, false).apply(PoseClip.RIGHT_ARM, c);
-        assertEquals(a[5], b[5], "same id, same sprawl on every side");
-        assertTrue(a[5] != c[5], "ids should differ");
-        assertTrue(Math.abs(a[5] - StancePose.DOWNED_ARM) <= StancePose.DOWNED_JITTER + EPS);
+    void downedPoseIsTheClip() {
+        double[] still = new double[PoseClip.CHANNELS];
+        java.util.Arrays.fill(still, 9.0);
+        new StancePose(Posture.DOWNED, 0.0, 0, 0, 0, 0, false).apply(PoseClip.RIGHT_LEG, still);
+        double[] idle = new double[PoseClip.CHANNELS];
+        for (int ch = 0; ch < PoseClip.CHANNELS; ch++) {
+            idle[ch] = PoseClip.base(PoseClip.RIGHT_LEG, ch);
+        }
+        StanceClips.DOWNED_IDLE.applyRest(PoseClip.RIGHT_LEG, idle);
+        assertArrayEquals(idle, still, EPS);
+        double[] crawl = new double[PoseClip.CHANNELS];
+        new StancePose(Posture.DOWNED, 0.0, 0, 0, 0, 0, false).gait(1.0, 3.0, 0).apply(PoseClip.RIGHT_LEG, crawl);
+        assertTrue(Math.abs(crawl[3] - idle[3]) + Math.abs(crawl[0] - idle[0]) > 0.05, "crawl leg = idle leg");
     }
 
     @Test

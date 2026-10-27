@@ -10,6 +10,8 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.LadderBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -38,10 +40,14 @@ public final class StanceLogic {
     public static final float STEP_RATE = 0.15F, SIDE_RATE = 0.2F;
     /** Posture transition, per tick: upright pair, into / out of lying ({@link #LIE_RATE} = tilt). */
     public static final float UPRIGHT_RATE = 1.0F / 5.0F, LIE_RATE = 1.0F / 12.0F;
+    /** Climb clip in / out: 4 ticks. */
+    static final float CLIMB_RATE = 0.25F;
     /** Box height, eye height by level - minLevel: STAND low / mid / normal, KNEEL low / normal / high, PRONE. */
-    static final float[] STAND_HEIGHT = {1.4F, 1.6F}, STAND_EYE = {1.22F, 1.42F};
+    static final float[] STAND_HEIGHT = {1.6F, 1.7F}, STAND_EYE = {1.42F, 1.52F};
     static final float[] KNEEL_HEIGHTS = {1.0F, KNEEL_HEIGHT, 1.4F}, KNEEL_EYES = {0.8F, KNEEL_EYE, 1.2F};
     static final float PRONE_HIGH_HEIGHT = 0.8F, PRONE_HIGH_EYE = 0.6F;
+    /** Kneel-wounded (downed.json): drawn eye 0.70 idle / 0.61..0.79 crawl, head top <= 1.06. */
+    static final float DOWNED_HEIGHT = 1.05F, DOWNED_EYE = 0.72F;
     static final float AIM_LIMIT = 90.0F;
     /** Further intents in the same tick are refused (seq still echoed). */
     public static final int MAX_INTENTS_PER_TICK = 4;
@@ -50,6 +56,18 @@ public final class StanceLogic {
     }
 
     /** Vanilla owns the pose: stance targets cleared, nothing forced. DOWNED lock holds anywhere alive + non-spectator. */
+    /** On a climbable off the ground, upright, not suspended: StancePose climb clip. */
+    static boolean climbing(Player p, StanceState s) {
+        return p.onClimbable() && !p.onGround() && s.effective().leans() && !suspended(p);
+    }
+
+    /** Yaw (deg) facing the ladder climbed; NaN => not a ladder (vines, scaffolding: no facing). */
+    static float ladderYaw(Player p) {
+        BlockState st = p.getLastClimbablePos().map(p.level()::getBlockState).orElse(null);
+        return st != null && st.getBlock() instanceof LadderBlock
+                ? st.getValue(LadderBlock.FACING).getOpposite().toYRot() : Float.NaN;
+    }
+
     public static boolean suspended(Player p) {
         if (!p.isAlive() || p.isSpectator()) {
             return true;
@@ -78,7 +96,7 @@ public final class StanceLogic {
                     p.getScale());
             case PRONE -> level == 0 ? null : sized(p.getDimensions(Pose.SWIMMING), PRONE_HIGH_HEIGHT,
                     PRONE_HIGH_EYE, p.getScale());
-            case DOWNED -> null;
+            case DOWNED -> sized(p.getDimensions(Pose.STANDING), DOWNED_HEIGHT, DOWNED_EYE, p.getScale());
         };
     }
 
@@ -113,7 +131,7 @@ public final class StanceLogic {
         }
         Posture eff = s.crawl ? Posture.PRONE : r.posture();
         int level = eff == r.posture() ? r.level() : 0;
-        if (eff.lying() && r.lean() != 0.0F) {
+        if (!eff.leans() && r.lean() != 0.0F) {
             return false;
         }
         if ((eff != s.effective() || level != s.effectiveLevel()) && !fits(p, eff, level)) {
@@ -189,7 +207,8 @@ public final class StanceLogic {
         Pose want = switch (eff) {
             case STAND -> level == 0 ? null : Pose.STANDING;
             case KNEEL -> Pose.CROUCHING;
-            case PRONE, DOWNED -> Pose.SWIMMING;
+            case PRONE -> Pose.SWIMMING;
+            case DOWNED -> Pose.STANDING;
         };
         boolean reshape = eff != s.appliedShape || level != s.appliedLevel;
         s.appliedShape = eff;
@@ -254,6 +273,7 @@ public final class StanceLogic {
             s.clearTargets();
         }
         s.ease(LEAN_RATE, ADS_RATE, STEP_RATE, SIDE_RATE);
+        s.stepClimb(climbing(p, s), ladderYaw(p));
         s.stepRoll();
         s.bodyYawO = s.bodyYaw;
         if (suspended) {
@@ -283,6 +303,7 @@ public final class StanceLogic {
         s.bodyYawO = s.bodyYaw;
         if (p.isLocalPlayer()) {
             s.bodyYaw = stepBodyYaw(s, p.getYRot(), p.walkAnimation.speed() > MOVING_SPEED);
+            s.steer(p.getX() - p.xo, p.getZ() - p.zo, s.bodyYaw);
         } else {
             float speedO = s.walkSpeed;
             s.applyDue(p.level().getGameTime() - AhfConfig.lagCompInterpTicks());
@@ -296,6 +317,7 @@ public final class StanceLogic {
             }
         }
         s.ease(LEAN_RATE, ADS_RATE, STEP_RATE, SIDE_RATE);
+        s.stepClimb(climbing(p, s), ladderYaw(p));
         s.stepRoll();
         if (suspended) {
             s.bodyYaw = p.yBodyRot;
@@ -349,10 +371,23 @@ public final class StanceLogic {
     }
 
     static void flush(ServerPlayer p, StanceState s) {
+        flush(p, s, EntityHistory.broadcastTick((ServerLevel) p.level()));
+    }
+
+    /**
+     * Pose-changing writes: synced at once, stamped with the next tick (as its {@link #serverTick} flush would).
+     * Vanilla's pose (entity data) leaves at this tick's end; the deferred sync trailed it => remote crouch / swim a
+     * tick before its stance was even queued.
+     */
+    static void flushNow(ServerPlayer p, StanceState s) {
+        flush(p, s, EntityHistory.nextBroadcastTick((ServerLevel) p.level()));
+    }
+
+    private static void flush(ServerPlayer p, StanceState s, long stamp) {
         if (s.dirty == 0) {
             return;
         }
-        s.stamp = EntityHistory.broadcastTick((ServerLevel) p.level());
+        s.stamp = stamp;
         s.sentBodyYaw = s.bodyYaw;
         if ((s.dirty & StanceState.WALK) != 0) {
             s.walkSent();
@@ -361,7 +396,7 @@ public final class StanceLogic {
         s.dirty = 0;
     }
 
-    /** C2S intent: validate, apply or reject, always echo {@code seq}; synced at the next {@link #serverTick}. */
+    /** C2S intent: validate, apply or reject, always echo {@code seq}; synced at once ({@link #flushNow}). */
     public static void handleIntent(ServerPlayer p, int seq, StanceRequest r) {
         StanceState s = p.getData(AhfStance.TYPE);
         StanceRequest ok = ++s.intents > MAX_INTENTS_PER_TICK ? null : accept(p, s, r);
@@ -371,6 +406,7 @@ public final class StanceLogic {
         s.seq = seq;
         s.dirty |= StanceState.TARGETS;
         resolvePose(p, s);
+        flushNow(p, s);
     }
 
     /** Owner prediction: applied locally at once; returns the seq to send, or -1 when refused locally. */
@@ -394,6 +430,7 @@ public final class StanceLogic {
         }
         s.applyTargets(r);
         resolvePose(p, s);
+        flushNow(p, s);
         return true;
     }
 
@@ -415,11 +452,12 @@ public final class StanceLogic {
             s.side = 0;
             s.dirty |= StanceState.TARGETS;
         }
-        if (s.effective().lying() && s.leanTarget != 0.0F) {
+        if (!s.effective().leans() && s.leanTarget != 0.0F) {
             s.leanTarget = 0.0F;
             s.dirty |= StanceState.TARGETS;
         }
         resolvePose(p, s);
+        flushNow(p, s);
     }
 
     static void onDeath(ServerPlayer p) {

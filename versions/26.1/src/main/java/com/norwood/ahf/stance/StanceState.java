@@ -23,6 +23,12 @@ public final class StanceState {
     /** Resync when the tracker's dead reckoning ({@code pos += speed} per tick) drifts past these. */
     static final float WALK_SPEED_EPSILON = 0.01F;
     static final float WALK_POS_EPSILON = 0.05F;
+    /** {@link #walkDir()}: moving direction relative to the body yaw. */
+    public static final int WALK_FORWARD = 0, WALK_LEFT = 1, WALK_BACK = 2, WALK_RIGHT = 3;
+    /** Horizontal speed (blocks / tick) below which {@link #walkDir()} keeps its last value. */
+    static final double STEER_SPEED = 0.02;
+    /** Lateral beats forward / back only past this ratio (diagonals walk forward / back). */
+    static final double STRAFE_RATIO = 1.2;
     private static final int MAX_PENDING = 64;
 
     Posture posture = Posture.STAND;
@@ -49,9 +55,16 @@ public final class StanceState {
     boolean walkSynced;
     /** Remote: a {@code WALK} update applied this tick (else dead reckoning). */
     boolean walkApplied;
+    /** Server: windowed displacement; owner: own motion; remote: synced with {@code WALK}. */
+    int walkDir;
+    int sentWalkDir;
 
     float lean;
     float leanO;
+    /** {@code AhfStance.drawnEye} at (game time, partial tick). */
+    long eyeTime = Long.MIN_VALUE;
+    float eyePt;
+    double eye;
     /** Eased {@link #effectiveLevel()} / {@link #effectiveSide()}. */
     float height;
     float heightO;
@@ -69,9 +82,16 @@ public final class StanceState {
     float fromSide;
     float blend = 1.0F;
     float blendO = 1.0F;
+    /** Reversed mid-way an odd number of times: the clip of {@code shown -> from} plays backwards. */
+    boolean reversed;
     /** Lying amount (render + rig tilt), 0 upright .. 1 flat. */
     float lie;
     float lieO;
+    /** Climb clip weight ({@link StanceLogic#climbing}), eased. */
+    float climb;
+    float climbO;
+    /** Ladder yaw (deg) faced while climbing, last seen; NaN => the body's own. */
+    float climbYaw = Float.NaN;
 
     int dirty;
     int intents;
@@ -148,6 +168,11 @@ public final class StanceState {
         return fromSide;
     }
 
+    /** See {@link #reversed}. */
+    public boolean transitionReversed() {
+        return reversed;
+    }
+
     /** Transition progress from {@link #from()} to the effective posture, 0..1 (1 = settled). */
     public float blend(float partialTick) {
         return Mth.lerp(partialTick, blendO, blend);
@@ -155,6 +180,23 @@ public final class StanceState {
 
     public float lie(float partialTick) {
         return Mth.lerp(partialTick, lieO, lie);
+    }
+
+    public float climb(float partialTick) {
+        return Mth.lerp(partialTick, climbO, climb);
+    }
+
+    public float climbYaw() {
+        return climbYaw;
+    }
+
+    /** {@code yaw}: the climbable's ({@link StanceLogic#ladderYaw}), kept while easing out. */
+    void stepClimb(boolean on, float yaw) {
+        climbO = climb;
+        climb = approach(climb, on ? 1.0F : 0.0F, StanceLogic.CLIMB_RATE);
+        if (on) {
+            climbYaw = yaw;
+        }
     }
 
     public boolean rolling() {
@@ -234,6 +276,22 @@ public final class StanceState {
         return walkSpeed;
     }
 
+    public int walkDir() {
+        return walkDir;
+    }
+
+    /** {@link #walkDir} from a horizontal motion {@code (dx, dz)} per tick at body yaw {@code yawDeg}. */
+    void steer(double dx, double dz, float yawDeg) {
+        if (dx * dx + dz * dz < STEER_SPEED * STEER_SPEED) {
+            return;
+        }
+        double yaw = Math.toRadians(yawDeg);
+        double forward = -dx * Math.sin(yaw) + dz * Math.cos(yaw);
+        double right = -dx * Math.cos(yaw) - dz * Math.sin(yaw);
+        walkDir = Math.abs(right) > STRAFE_RATIO * Math.abs(forward) ? right > 0 ? WALK_RIGHT : WALK_LEFT
+                : forward >= 0 ? WALK_FORWARD : WALK_BACK;
+    }
+
     /** Server tick: vanilla's walk recurrence over the windowed horizontal displacement. */
     void stepWalk(double x, double z) {
         int k = walkSamples % walkX.length;
@@ -245,12 +303,14 @@ public final class StanceState {
         if (n > 0) {
             int o = (walkSamples - 1 - n) % walkX.length;
             d = (float) (Math.sqrt((x - walkX[o]) * (x - walkX[o]) + (z - walkZ[o]) * (z - walkZ[o])) / n);
+            steer((x - walkX[o]) / n, (z - walkZ[o]) / n, bodyYaw);
         }
         walkSpeed += (Math.min(d * 4.0F, 1.0F) - walkSpeed) * 0.4F;
         walkPos += walkSpeed;
         walkSentAge++;
         if (Math.abs(walkSpeed - sentWalkSpeed) > WALK_SPEED_EPSILON
-                || Math.abs(walkPos - (sentWalkPos + sentWalkSpeed * walkSentAge)) > WALK_POS_EPSILON) {
+                || Math.abs(walkPos - (sentWalkPos + sentWalkSpeed * walkSentAge)) > WALK_POS_EPSILON
+                || walkDir != sentWalkDir) {
             dirty |= WALK;
         }
     }
@@ -259,6 +319,7 @@ public final class StanceState {
     void walkSent() {
         sentWalkPos = walkPos;
         sentWalkSpeed = walkSpeed;
+        sentWalkDir = walkDir;
         walkSentAge = 0;
     }
 
@@ -311,7 +372,9 @@ public final class StanceState {
         height = heightO = sideAmount = sideAmountO = 0.0F;
         shown = from = Posture.STAND;
         blend = blendO = 1.0F;
+        reversed = false;
         lie = lieO = 0.0F;
+        climb = climbO = 0.0F;
         rollDir = 0;
         adsProgress = adsProgressO = 0.0F;
         dirty |= ALL;
@@ -319,31 +382,13 @@ public final class StanceState {
 
     void ease(float leanRate, float adsRate, float stepRate, float sideRate) {
         Posture eff = effective();
-        float leanTo = eff.lying() ? 0.0F : leanTarget;
+        float leanTo = eff.leans() ? leanTarget : 0.0F;
         leanO = lean;
         lean = approach(lean, leanTo, leanRate);
         heightO = height;
         sideAmountO = sideAmount;
         blendO = blend;
-        if (eff != shown) {
-            if (eff == from && blend < 1.0F) {
-                // Reversed mid-way: back along the same blend, no jump.
-                float h = fromHeight, sd = fromSide;
-                fromHeight = height;
-                fromSide = sideAmount;
-                height = heightO = h;
-                sideAmount = sideAmountO = sd;
-                blend = blendO = 1.0F - blend;
-            } else {
-                fromHeight = height;
-                fromSide = sideAmount;
-                height = heightO = effectiveLevel();
-                sideAmount = sideAmountO = 0.0F;
-                blend = blendO = 0.0F;
-            }
-            from = shown;
-            shown = eff;
-        }
+        beginTransition();
         blend = approach(blend, 1.0F, StanceLogic.transitionRate(from, eff));
         height = approach(height, effectiveLevel(), stepRate);
         sideAmount = approach(sideAmount, effectiveSide(), sideRate);
@@ -351,6 +396,37 @@ public final class StanceState {
         lie = approach(lie, eff.lying() ? 1.0F : 0.0F, StanceLogic.LIE_RATE);
         adsProgressO = adsProgress;
         adsProgress = approach(adsProgress, ads && !downed ? 1.0F : 0.0F, adsRate);
+    }
+
+    /**
+     * Starts the transition to {@link #effective()} if it is not under way. Idempotent: the render reads it ahead of
+     * the tick's {@link #ease} (owner prediction / sync change the target between ticks), else the new posture shows
+     * fully settled for that tick and then restarts from the old one.
+     */
+    void beginTransition() {
+        Posture eff = effective();
+        if (eff == shown) {
+            return;
+        }
+        if (eff == from && blend < 1.0F) {
+            // Reversed mid-way: back along the same blend, no jump.
+            float h = fromHeight, sd = fromSide;
+            fromHeight = height;
+            fromSide = sideAmount;
+            height = heightO = h;
+            sideAmount = sideAmountO = sd;
+            blend = blendO = 1.0F - blend;
+            reversed = !reversed;
+        } else {
+            fromHeight = height;
+            fromSide = sideAmount;
+            height = heightO = effectiveLevel();
+            sideAmount = sideAmountO = 0.0F;
+            blend = blendO = 0.0F;
+            reversed = false;
+        }
+        from = shown;
+        shown = eff;
     }
 
     static float approach(float from, float to, float step) {
@@ -377,6 +453,16 @@ public final class StanceState {
         pending.add(u);
     }
 
+    /** A queued update changes the posture: vanilla crouch / SWIMMING (entity data, undelayed) shows before it. */
+    boolean postureQueued() {
+        for (Update u : pending) {
+            if ((u.mask & TARGETS) != 0 && u.posture != effective()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void applyDue(long viewTick) {
         Update u;
         while ((u = pending.peek()) != null && u.stamp <= viewTick) {
@@ -390,6 +476,7 @@ public final class StanceState {
         if ((u.mask & WALK) != 0) {
             walkPos = u.walkPos;
             walkSpeed = u.walkSpeed;
+            walkDir = u.walkDir;
             walkSynced = walkApplied = true;
         }
         if ((u.mask & LOCKS) != 0) {
@@ -442,6 +529,7 @@ public final class StanceState {
         if ((mask & WALK) != 0) {
             buf.writeFloat(walkPos);
             buf.writeFloat(walkSpeed);
+            buf.writeByte(walkDir);
         }
         buf.writeFloat(bodyYaw);
         buf.writeVarLong(stamp);
@@ -467,6 +555,7 @@ public final class StanceState {
         long stamp;
         float walkPos;
         float walkSpeed;
+        int walkDir;
 
         static Update read(FriendlyByteBuf buf) {
             Update u = new Update();
@@ -491,6 +580,7 @@ public final class StanceState {
             if ((u.mask & WALK) != 0) {
                 u.walkPos = buf.readFloat();
                 u.walkSpeed = buf.readFloat();
+                u.walkDir = buf.readByte();
             }
             u.bodyYaw = buf.readFloat();
             u.stamp = buf.readVarLong();

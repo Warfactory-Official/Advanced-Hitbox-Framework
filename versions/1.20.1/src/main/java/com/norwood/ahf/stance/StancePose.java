@@ -21,13 +21,15 @@ public final class StancePose {
 
     public static final double PIVOT_Y = 0.7;
     static final double PRONE_LEG_SPREAD = 0.1;
-    static final double DOWNED_ARM = 1.2;
-    static final double DOWNED_LEG = 0.25;
-    static final double DOWNED_JITTER = 0.28;
-    /** DOWNED on its back: PA body pitch pi inside the face-down swim tilt (net: on its back), yaw, lift. */
-    static final double DOWNED_FLIP = Math.PI;
-    static final double DOWNED_YAW = Math.toRadians(8.0);
-    static final double DOWNED_LIFT = 0.1;
+    /** Blocks per climb cycle; 0.35 = hand stroke (grip holds rung) but 6.7 cycles/s => too fast, grip slides ~0.025/0.05 climbed. */
+    static final double CLIMB_CYCLE = 0.8;
+    /**
+     * Transition progress over which the clip eases in / out. Easing clip-to-posture endpoint offsets across instead
+     * FORBIDDEN: ends != postures (gun holds, prone levels) => tilted parts swing through the floor.
+     */
+    static final double TRANSITION_EASE = 0.25;
+    /** DOWNED walk speed at which the crawl fully replaces the idle. */
+    static final double DOWNED_CRAWL_SPEED = 0.1;
     private static final int CH = PoseClip.CHANNELS;
     /** Vanilla {@code HumanoidModel} crouch minus upright, [bone * CHANNELS + ch], ModelPart units. */
     private static final double[] CROUCH = new double[PoseClip.BONES.length * CH];
@@ -64,7 +66,27 @@ public final class StancePose {
     private double fromCrouch;
     private boolean crouchBones;
     private double scale = 1.0;
-    private final double[] jitter = new double[4];
+    /** DOWNED crawl input: walk speed, walk position, {@code StanceState.WALK_*}. */
+    private double gaitSpeed;
+    private double gaitPos;
+    private int gaitDir;
+    /** Climb clip over everything: weight, clip ticks, body turn to the ladder (rad, PA body yaw). */
+    private double climb;
+    private double climbT;
+    private double climbTurn;
+    /** Posture transition clip, its time (ticks), its weight over the posture blend; null clip => none. */
+    private PoseClip trans;
+    private double transT;
+    private double transW;
+    /**
+     * Floor contact ({@link #ground}) of {@link #of} poses: owner, its render time. Channel mix of posture / level
+     * clips and gun holds floats the rig (blend 0.15, lowered STAND + gun lower 0.13) => contact whenever posed;
+     * eased contact FORBIDDEN: queued -> blend hand-off pops 0.08.
+     */
+    private @Nullable LivingEntity owner;
+    private float partialTick;
+    private boolean grounded;
+    private double ground;
     /** [PA bone * CHANNELS + channel] over the layers below: positions added, rotations premultiplied (parent frame). */
     private final double[] delta = new double[PoseClip.BONES.length * CH];
 
@@ -73,7 +95,7 @@ public final class StancePose {
      * @param side   eased side, -1..1
      * @param rollT  prone roll progress 0..1, {@code rollDir} -1 / 0 / +1
      */
-    public StancePose(Posture posture, double lean, double height, double side, int rollDir, double rollT, int seed,
+    public StancePose(Posture posture, double lean, double height, double side, int rollDir, double rollT,
                       boolean libraryLying) {
         this.posture = posture;
         this.libraryLying = libraryLying;
@@ -98,13 +120,6 @@ public final class StancePose {
                 }
             }
             case DOWNED -> {
-                int h = seed * 0x9E3779B9;
-                for (int i = 0; i < jitter.length; i++) {
-                    h ^= h >>> 15;
-                    h *= 0x2C1B3C6D;
-                    h ^= h >>> 12;
-                    jitter[i] = ((h & 0xFFFF) / 65535.0 - 0.5) * 2.0 * DOWNED_JITTER;
-                }
             }
         }
     }
@@ -118,30 +133,65 @@ public final class StancePose {
         if (s == null) {
             return null;
         }
+        s.beginTransition();
         Posture eff = s.effective();
-        double lean = eff.lying() ? 0.0 : s.lean(partialTick);
+        double lean = eff.leans() ? s.lean(partialTick) : 0.0;
         double height = s.height(partialTick);
         double side = s.sideAmount(partialTick);
         double blend = s.blend(partialTick);
         double lie = smooth(s.lie(partialTick));
+        double climb = smooth(s.climb(partialTick));
+        boolean queued = s.postureQueued();
         if (eff == Posture.STAND && lean == 0.0 && height == 0.0 && side == 0.0 && blend >= 1.0 && lie == 0.0
-                || StanceLogic.suspended(p)) {
+                && climb == 0.0 && !queued || StanceLogic.suspended(p)) {
             return null;
         }
-        StancePose pose = new StancePose(eff, lean, height, side, s.rollDir(), s.rollProgress(partialTick), p.getId(),
+        StancePose pose = new StancePose(eff, lean, height, side, s.rollDir(), s.rollProgress(partialTick),
                 eff == Posture.PRONE && GunPoses.libraryLying(p));
         pose.lie = lie;
+        pose.gait(p.level().isClientSide() ? p.walkAnimation.speed(partialTick) : GunPoses.walkSpeed(p),
+                p.level().isClientSide() ? p.walkAnimation.position(partialTick) : GunPoses.walkPos(p),
+                GunPoses.walkDir(p));
         pose.scale = p.getScale();
+        if (climb > 0.0) {
+            PoseClip c = StanceClips.CLIMB;
+            double f = Mth.lerp(partialTick, p.yOld, p.getY()) / CLIMB_CYCLE;
+            pose.climb = climb;
+            pose.climbT = c.returnTick + (f - Math.floor(f)) * (c.endTick - c.returnTick + 1);
+            float yaw = s.climbYaw();
+            pose.climbTurn = Float.isNaN(yaw) ? 0.0
+                    : -Math.toRadians(Mth.wrapDegrees(yaw - Mth.rotLerp(partialTick, p.yBodyRotO, p.yBodyRot)));
+        }
         if (blend < 1.0) {
             Posture from = s.from();
+            boolean back = s.transitionReversed();
+            PoseClip t = back ? StanceClips.transition(eff, from) : StanceClips.transition(from, eff);
+            if (t != null) {
+                double u = back ? 1.0 - blend : blend;
+                pose.trans = t;
+                pose.transT = u * t.endTick;
+                // prone roll mid-transition: roll owns the body
+                double roll = s.rollDir() == 0 ? 0.0 : Math.min(s.rollProgress(partialTick) / TRANSITION_EASE, 1.0);
+                pose.transW = smooth(Math.min(Math.min(u, 1.0 - u) / TRANSITION_EASE, 1.0)) * (1.0 - smooth(roll));
+            }
             // Own player: LocalPlayer.isCrouching = sneak key => no vanilla crouch in KNEEL to undo.
             double crouch = p.isLocalPlayer() ? 0.0
                     : (from == Posture.KNEEL ? 1.0 : 0.0) - (p.isCrouching() ? 1.0 : 0.0);
-            pose.leaving(new StancePose(from, from.lying() ? 0.0 : lean, s.fromHeight(), s.fromSide(), 0, 0.0,
-                    p.getId(), from == Posture.PRONE && GunPoses.hasLying(p)), smooth(blend), crouch,
+            pose.leaving(new StancePose(from, from.leans() ? lean : 0.0, s.fromHeight(), s.fromSide(), 0, 0.0,
+                    from == Posture.PRONE && GunPoses.hasLying(p)), smooth(blend), crouch,
                     GunPoses.select(p, Math.min(GunPoses.walkSpeed(p), 1.0F)) == null);
         }
+        pose.owner = p;
+        pose.partialTick = partialTick;
         return pose;
+    }
+
+    /** DOWNED crawl input ({@code dir}: {@code StanceState.WALK_*}). */
+    public StancePose gait(double speed, double pos, int dir) {
+        gaitSpeed = speed;
+        gaitPos = pos;
+        gaitDir = dir;
+        return this;
     }
 
     /**
@@ -150,21 +200,24 @@ public final class StancePose {
      * clips own the bones (upper overwritten, lower faded by the consumer), render offset only.
      */
     StancePose leaving(StancePose from, double blend, double fromCrouch, boolean crouchBones) {
-        this.from = from;
+        this.from = from.gait(gaitSpeed, gaitPos, gaitDir);
         this.blend = blend;
         this.fromCrouch = fromCrouch;
         this.crouchBones = crouchBones;
         return this;
     }
 
-    /** {@link #lie} without building the pose; NaN => vanilla tilt (no stance, or upright + settled: vanilla crawl). */
+    /**
+     * {@link #lie} without building the pose; NaN => vanilla tilt (no stance, or upright + settled + no lying update
+     * queued: vanilla crawl).
+     */
     public static double lieOf(LivingEntity e, float partialTick) {
         StanceState s = e instanceof Player p && !StanceLogic.suspended(p) ? AhfStance.get(p) : null;
         if (s == null) {
             return Double.NaN;
         }
         float lie = s.lie(partialTick);
-        return lie == 0.0F && !s.effective().lying() ? Double.NaN : smooth(lie);
+        return lie == 0.0F && !s.effective().lying() && !s.lyingQueued() ? Double.NaN : smooth(lie);
     }
 
     static double smooth(double t) {
@@ -206,13 +259,27 @@ public final class StancePose {
     public void body(double[] w) {
         if (from == null) {
             ownBody(w);
-            return;
+        } else {
+            double[] b = w.clone();
+            from.ownBody(b);
+            b[1] -= fromCrouch * CROUCH_RENDER_OFFSET * scale;
+            ownBody(w);
+            blend(PoseClip.BODY, b, w);
         }
-        double[] b = w.clone();
-        from.ownBody(b);
-        b[1] -= fromCrouch * CROUCH_RENDER_OFFSET * scale;
-        ownBody(w);
-        mix(b, w, blend);
+        // world drop inside the lying tilt (rig x): rig (y, z) = g (-cos, sin), PA z = -rig z
+        double g = ground();
+        w[1] -= g * Math.cos(tiltAngle(lie));
+        w[2] -= g * Math.sin(tiltAngle(lie));
+        climb(PoseClip.BODY, w);
+    }
+
+    /** Drop (blocks, world down) putting the lowest rig point on the floor ({@link #owner}); 0 while measuring. */
+    public double ground() {
+        if (!grounded) {
+            grounded = true;
+            ground = owner != null ? HumanoidRig.floor(owner, this, partialTick) : 0.0;
+        }
+        return ground;
     }
 
     private void ownBody(double[] w) {
@@ -222,9 +289,11 @@ public final class StancePose {
         w[5] += roll;
         w[4] += rollTurn;
         if (posture == Posture.DOWNED) {
-            w[2] += DOWNED_LIFT;
-            w[3] += DOWNED_FLIP;
-            w[4] += DOWNED_YAW;
+            double[] b = new double[CH];
+            downed(PoseClip.BODY, b);
+            for (int ch = 0; ch < CH; ch++) {
+                w[ch] += b[ch];
+            }
         }
     }
 
@@ -232,17 +301,51 @@ public final class StancePose {
     public void apply(int bone, double[] v) {
         if (from == null) {
             own(bone, v);
+        } else {
+            double[] b = v.clone();
+            if (crouchBones) {
+                for (int ch = 0; ch < CH; ch++) {
+                    b[ch] += fromCrouch * CROUCH[bone * CH + ch];
+                }
+            }
+            from.own(bone, b);
+            own(bone, v);
+            blend(bone, b, v);
+        }
+        climb(bone, v);
+    }
+
+    /** {@code to} := {@code from} blended into {@code to}, then toward the transition clip (absolute). Arms: the gun's. */
+    private void blend(int bone, double[] from, double[] to) {
+        mix(from, to, blend);
+        if (trans == null || transW == 0.0 || bone == PoseClip.RIGHT_ARM || bone == PoseClip.LEFT_ARM
+                || !trans.animates(bone)) {
             return;
         }
-        double[] b = v.clone();
-        if (crouchBones) {
-            for (int ch = 0; ch < CH; ch++) {
-                b[ch] += fromCrouch * CROUCH[bone * CH + ch];
-            }
+        double[] c = new double[CH];
+        for (int ch = 0; ch < CH; ch++) {
+            c[ch] = PoseClip.base(bone, ch);
         }
-        from.own(bone, b);
-        own(bone, v);
-        mix(b, v, blend);
+        trans.applyAt(bone, transT, c);
+        mix(to, c, transW);
+        System.arraycopy(c, 0, to, 0, CH);
+    }
+
+    /** {@code v} toward the climb clip (absolute) by {@link #climb}; body turned to the ladder. */
+    private void climb(int bone, double[] v) {
+        if (climb == 0.0) {
+            return;
+        }
+        double[] c = new double[CH];
+        for (int ch = 0; ch < CH; ch++) {
+            c[ch] = PoseClip.base(bone, ch);
+        }
+        StanceClips.CLIMB.applyAt(bone, climbT, c);
+        if (bone == PoseClip.BODY) {
+            c[4] += climbTurn;
+        }
+        mix(v, c, climb);
+        System.arraycopy(c, 0, v, 0, CH);
     }
 
     /** {@code to = from + (to - from) * t}: positions + bend linear, ZYX rotation slerped. */
@@ -274,17 +377,7 @@ public final class StancePose {
             v[4] = 0.0;
             v[5] = sideSign * PRONE_LEG_SPREAD;
         } else if (posture == Posture.DOWNED) {
-            if (arm) {
-                v[3] = 0.0;
-                v[4] = 0.0;
-                v[5] = sideSign * (DOWNED_ARM + jitter[bone == PoseClip.RIGHT_ARM ? 0 : 1]);
-            } else if (leg) {
-                v[3] = 0.0;
-                v[4] = 0.0;
-                v[5] = sideSign * (DOWNED_LEG + jitter[2] * 0.5);
-            } else if (bone == PoseClip.HEAD) {
-                v[4] += jitter[3];
-            }
+            downed(bone, v);
         }
         int o = bone * CH;
         v[0] += delta[o];
@@ -300,6 +393,27 @@ public final class StancePose {
         }
         v[PoseClip.BEND_AXIS] += delta[o + PoseClip.BEND_AXIS];
         v[PoseClip.BEND] += delta[o + PoseClip.BEND];
+    }
+
+    /**
+     * DOWNED channels of {@code bone}, absolute: the idle (rest frame) crossed into the crawl clip of {@link #gaitDir}
+     * (phased by walk position) by walk speed.
+     */
+    private void downed(int bone, double[] v) {
+        double[] idle = new double[CH];
+        for (int ch = 0; ch < CH; ch++) {
+            idle[ch] = PoseClip.base(bone, ch);
+        }
+        double[] crawl = idle.clone();
+        StanceClips.DOWNED_IDLE.applyRest(bone, idle);
+        double w = Math.min(gaitSpeed / DOWNED_CRAWL_SPEED, 1.0);
+        if (w > 0.0) {
+            PoseClip c = StanceClips.DOWNED_CRAWL[gaitDir];
+            c.applyAt(bone, GunPoses.phaseTicks(c, gaitPos), crawl);
+            mix(idle, crawl, w);
+            idle = crawl;
+        }
+        System.arraycopy(idle, 0, v, 0, CH);
     }
 
     /** Eye displacement in the rig local frame (x right, y up, z front) for camera eye height {@code eyeHeight}. */

@@ -4,6 +4,7 @@ import com.mojang.authlib.GameProfile;
 import com.norwood.ahf.Ahf;
 import com.norwood.ahf.lagcomp.EntityHistory;
 import com.norwood.ahf.lagcomp.Snapshot;
+import com.norwood.ahf.geometry.Obb;
 import com.norwood.ahf.rig.HumanoidRig;
 import com.norwood.ahf.stance.AhfStance;
 import com.norwood.ahf.stance.AhfStances;
@@ -27,6 +28,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.LadderBlock;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.gametest.GameTestHolder;
@@ -110,8 +113,11 @@ public class StanceGameTest {
                 double lateral = eye.subtract(feet).dot(right);
                 helper.assertTrue(Math.abs(lateral - arm * Math.sin(a)) < EPS,
                         "eye lateral " + lateral + " != " + arm * Math.sin(a));
-                helper.assertTrue(Math.abs(eye.y - feet.y - (1.62 + arm * (Math.cos(a) - 1.0))) < EPS,
-                        "eye height under lean " + (eye.y - feet.y));
+                helper.assertTrue(Math.abs(HumanoidRig.eye(p, null, 1.0F) - 1.62) < EPS, "unposed rig eye");
+                // feet stay planted: drawn head 0.056 above the body rolled rigidly about its pivot
+                double drawn = HumanoidRig.eye(p, StancePose.of(p, 1.0F), 1.0F);
+                helper.assertTrue(Math.abs(eye.y - feet.y - drawn) < EPS && drawn < 1.62 + arm * (Math.cos(a) - 1.0)
+                        + 0.1, "eye height under lean " + (eye.y - feet.y) + " != drawn " + drawn);
                 helper.assertTrue(p.getEyeY() == feet.y + p.getEyeHeight(), "getEyeY must ignore lean");
                 helper.assertTrue(p.getEyePosition(1.0F).distanceTo(eye) < EPS, "partial-tick overload disagrees");
             } finally {
@@ -134,7 +140,7 @@ public class StanceGameTest {
         helper.runAfterDelay(LEAN_TICKS, () -> {
             try {
                 Vec3 centre = new Vec3(p.getX(), p.getEyeY(), p.getZ());
-                double unclamped = new StancePose(Posture.STAND, 1.0, 0, 0, 0, 0, 0, false).eyeOffsetLocal(p.getEyeHeight()).x;
+                double unclamped = new StancePose(Posture.STAND, 1.0, 0, 0, 0, 0, false).eyeOffsetLocal(p.getEyeHeight()).x;
                 helper.assertTrue(centre.x + unclamped > face + 0.125,
                         "setup: an unclamped lean must reach past the cover (" + (centre.x + unclamped) + ")");
                 Vec3 eye = p.getEyePosition();
@@ -199,7 +205,7 @@ public class StanceGameTest {
         FakePlayer p = spawn(helper, 0.0F);
         try {
             helper.assertTrue(AhfStance.request(p, StanceRequest.STAND.withLevel(-2)), "stand low refused");
-            assertDims(helper, p, Pose.STANDING, 1.4, 1.22, "stand low");
+            assertDims(helper, p, Pose.STANDING, 1.6, 1.42, "stand low");
             helper.assertFalse(AhfStance.request(p, StanceRequest.STAND.withLevel(1)), "stand above normal accepted");
             StanceRequest kneel = StanceRequest.STAND.withPosture(Posture.KNEEL);
             helper.assertTrue(AhfStance.request(p, kneel.withLevel(1)), "kneel high refused");
@@ -223,7 +229,7 @@ public class StanceGameTest {
     public void sideStepMovesTheHitRig(GameTestHelper helper) {
         FakePlayer p = spawn(helper, 0.0F);
         HumanoidRig.LocalRig upright = HumanoidRig.compute(p);
-        StancePose step = new StancePose(Posture.STAND, 0, 0, 1, 0, 0, 0, false);
+        StancePose step = new StancePose(Posture.STAND, 0, 0, 1, 0, 0, false);
         helper.assertTrue(step.shift() > 0.2, "step " + step.shift());
         helper.assertTrue(AhfStance.request(p, StanceRequest.STAND.withSide(1)), "side step refused");
         helper.assertTrue(AhfStance.request(p, StanceRequest.STAND.withSide(1).withLean(0.5F)), "lean refused");
@@ -232,7 +238,9 @@ public class StanceGameTest {
             try {
                 HumanoidRig.LocalRig stepped = HumanoidRig.compute(p);
                 Vec3 head = stepped.head.center().subtract(upright.head.center());
-                helper.assertTrue(Math.abs(head.x - step.shift()) < 1.0e-3 && Math.abs(head.y + step.drop()) < 1.0e-3,
+                double ground = StancePose.of(p, 1.0F).ground();
+                helper.assertTrue(Math.abs(head.x - step.shift()) < 1.0e-3
+                                && Math.abs(head.y + step.drop() + ground) < 1.0e-3,
                         "head moved " + head);
                 Vec3 torso = stepped.torso.center().subtract(upright.torso.center());
                 helper.assertTrue(Math.abs(torso.x - step.shift()) < 0.05, "torso moved " + torso);
@@ -279,7 +287,7 @@ public class StanceGameTest {
             AhfStance.setDowned(p, true);
             helper.assertTrue(AhfStance.weaponsBlocked(p), "downed did not block weapons");
             helper.assertTrue(AhfStance.posture(p) == Posture.DOWNED, "downed not effective");
-            assertDims(helper, p, Pose.SWIMMING, 0.6, 0.4, "DOWNED");
+            assertDims(helper, p, Pose.STANDING, 1.05, 0.72, "DOWNED");
             helper.assertFalse(AhfStance.request(p, StanceRequest.STAND), "stand accepted while downed");
             helper.assertFalse(AhfStance.request(p, LEAN_RIGHT), "lean accepted while downed");
             StanceLogic.handleIntent(p, 9, StanceRequest.STAND.withPosture(Posture.PRONE));
@@ -298,22 +306,139 @@ public class StanceGameTest {
         helper.succeed();
     }
 
-    /** DOWNED lies on its back: head behind the hips (-90 deg about body-right), body flat; PRONE keeps it ahead. */
+    /** Ladder, wall north: climb clip past its 4-tick ease; hands and body turned from the west look to the wall. */
     @GameTest(templateNamespace = Ahf.MOD_ID, template = TEMPLATE)
-    public void downedRigLiesOnItsBack(GameTestHelper helper) {
+    public void ladderClimbFacesTheWall(GameTestHelper helper) {
+        for (int y = 2; y <= 4; y++) {
+            helper.setBlock(new BlockPos(1, y, 0), Blocks.STONE.defaultBlockState());
+            helper.setBlock(new BlockPos(1, y, 1), Blocks.LADDER.defaultBlockState()
+                    .setValue(LadderBlock.FACING, Direction.SOUTH));
+        }
+        FakePlayer p = spawn(helper, 90.0F);
+        Vec3 at = helper.absoluteVec(new Vec3(1.5, 3.0, 1.5));
+        p.moveTo(at.x, at.y, at.z, 90.0F, 0.0F);
+        p.setOnGround(false);
+        helper.runAfterDelay(10, () -> {
+            try {
+                helper.assertTrue(AhfStance.climb(p, 1.0F) == 1.0F, "climb weight " + AhfStance.climb(p, 1.0F));
+                HumanoidRig.LocalRig rig = HumanoidRig.compute(p);
+                // rig x = right of the body yaw (west) = the wall (north)
+                double reach = Math.min(rig.rightForearm.center().x - rig.rightArm.center().x,
+                        rig.leftForearm.center().x - rig.leftArm.center().x);
+                helper.assertTrue(reach > 0.15, "forearms reach " + reach + " toward the wall");
+                Vec3 front = rig.torso.axisZ();
+                helper.assertTrue(Math.abs(front.x) > 0.7, "torso front " + front + " not turned 90 deg to the wall");
+            } finally {
+                p.discard();
+            }
+            helper.succeed();
+        });
+    }
+
+    /**
+     * STAND -> PRONE reversed to STAND mid-blend: the clip plays back from where it was. Wrong clip => residual pop
+     * (step across the reversal >> the steps around it).
+     */
+    @GameTest(templateNamespace = Ahf.MOD_ID, template = TEMPLATE)
+    public void transitionReversalKeepsTheRig(GameTestHelper helper) {
+        FakePlayer p = spawn(helper, 0.0F);
+        helper.assertTrue(AhfStance.request(p, StanceRequest.STAND.withPosture(Posture.PRONE)), "prone refused");
+        Vec3[][] at = new Vec3[16][];
+        for (int k = 1; k <= 15; k++) {
+            int tick = k;
+            helper.runAfterDelay(tick, () -> {
+                HumanoidRig.LocalRig rig = HumanoidRig.compute(p);
+                Obb[] all = rig.all();
+                at[tick] = new Vec3[all.length];
+                for (int i = 0; i < all.length; i++) {
+                    at[tick][i] = all[i].center();
+                }
+                if (tick == 6) {
+                    helper.assertTrue(AhfStance.request(p, StanceRequest.STAND), "stand refused");
+                }
+            });
+        }
+        helper.runAfterDelay(16, () -> {
+            try {
+                double across = 0.0;
+                double around = 0.0;
+                for (int k = 2; k <= 15; k++) {
+                    double step = 0.0;
+                    for (int i = 0; i < at[k].length; i++) {
+                        step = Math.max(step, at[k][i].distanceTo(at[k - 1][i]));
+                    }
+                    if (k == 7) {
+                        across = step;
+                    } else {
+                        around = Math.max(around, step);
+                    }
+                }
+                helper.assertTrue(across < 1.5 * around, "step across the reversal " + across + " vs " + around);
+            } finally {
+                p.discard();
+            }
+            helper.succeed();
+        });
+    }
+
+    /** Climb phase from y at the clip's stroke: one hand holds its rung (world y) while the body rises. */
+    @GameTest(templateNamespace = Ahf.MOD_ID, template = TEMPLATE)
+    public void climbHandHoldsItsRung(GameTestHelper helper) {
+        for (int y = 2; y <= 6; y++) {
+            helper.setBlock(new BlockPos(1, y, 0), Blocks.STONE.defaultBlockState());
+            helper.setBlock(new BlockPos(1, y, 1), Blocks.LADDER.defaultBlockState()
+                    .setValue(LadderBlock.FACING, Direction.SOUTH));
+        }
+        FakePlayer p = spawn(helper, 90.0F);
+        Vec3 at = helper.absoluteVec(new Vec3(1.5, 3.0, 1.5));
+        p.moveTo(at.x, at.y, at.z, 90.0F, 0.0F);
+        p.setOnGround(false);
+        helper.runAfterDelay(10, () -> {
+            try {
+                double slid = 0.0;
+                double[] last = null;
+                int steps = 40;
+                for (int k = 0; k <= steps; k++) {
+                    double y = at.y + k * 0.05;
+                    p.setPos(at.x, y, at.z);
+                    p.yOld = y;
+                    HumanoidRig.LocalRig rig = HumanoidRig.compute(p);
+                    double[] hands = {y + hand(rig.rightForearm, rig.rightArm), y + hand(rig.leftForearm, rig.leftArm)};
+                    if (last != null) {
+                        slid += Math.min(Math.abs(hands[0] - last[0]), Math.abs(hands[1] - last[1]));
+                    }
+                    last = hands;
+                }
+                // measured 0.008 / 0.05 climbed; 1 cycle/block => 0.031
+                helper.assertTrue(slid / steps < 0.03, "gripping hand slid " + slid / steps + " per 0.05 climbed");
+            } finally {
+                p.discard();
+            }
+            helper.succeed();
+        });
+    }
+
+    /** Forearm end away from the upper arm, rig y. */
+    private static double hand(Obb fore, Obb upper) {
+        Vec3 d = fore.axisY().scale(fore.half().y);
+        Vec3 a = fore.center().add(d);
+        Vec3 b = fore.center().subtract(d);
+        return (a.distanceToSqr(upper.center()) > b.distanceToSqr(upper.center()) ? a : b).y;
+    }
+
+    /** DOWNED kneels wounded (downed.json), past the 12-tick posture blend: upright, head over the hips, low eye. */
+    @GameTest(templateNamespace = Ahf.MOD_ID, template = TEMPLATE)
+    public void downedRigKneels(GameTestHelper helper) {
         FakePlayer p = spawn(helper, 0.0F);
         AhfStance.setDowned(p, true);
-        // FakePlayer never ticks: swim amount (vanilla tilt progress) set to its settled value.
-        ObfuscationReflectionHelper.setPrivateValue(LivingEntity.class, p, 1.0F, "swimAmount");
-        ObfuscationReflectionHelper.setPrivateValue(LivingEntity.class, p, 1.0F, "swimAmountO");
-        helper.runAfterDelay(1, () -> {
+        helper.runAfterDelay(20, () -> {
             try {
                 HumanoidRig.LocalRig rig = HumanoidRig.compute(p);
                 Vec3 head = rig.head.center();
                 Vec3 torso = rig.torso.center();
-                helper.assertTrue(head.z < torso.z - 0.3, "downed head " + head + " not behind torso " + torso);
-                helper.assertTrue(Math.abs(head.y - torso.y) < 0.2, "downed body not flat: head " + head
-                        + ", torso " + torso);
+                helper.assertTrue(head.y > torso.y + 0.3, "downed head " + head + " not above torso " + torso);
+                helper.assertTrue(head.y > 0.5 && head.y < 1.1, "downed head height " + head.y);
+                helper.assertTrue(p.getEyeHeight() < 0.8F, "downed eye " + p.getEyeHeight());
                 AhfStance.setDowned(p, false);
             } finally {
                 p.discard();
@@ -365,10 +490,10 @@ public class StanceGameTest {
             helper.runAfterDelay(1, () -> {
                 try {
                     helper.assertFalse(StanceLogic.suspended(p), "downed suspended in water + mounted");
-                    assertDims(helper, p, Pose.SWIMMING, 0.6, 0.4, "DOWNED in water + mounted");
-                    helper.assertTrue(p.getForcedPose() == Pose.SWIMMING, "downed pose released");
-                    helper.assertTrue(AhfStances.active(p) == PostureStance.LYING,
-                            "rig stance " + AhfStances.active(p) + " != LYING");
+                    assertDims(helper, p, Pose.STANDING, 1.05, 0.72, "DOWNED in water + mounted");
+                    helper.assertTrue(p.getForcedPose() == Pose.STANDING, "downed pose released");
+                    helper.assertTrue(AhfStances.active(p) == PostureStance.UPRIGHT,
+                            "rig stance " + AhfStances.active(p) + " != UPRIGHT");
                     helper.assertTrue(StancePose.of(p, 1.0F) != null, "downed rig unposed");
                     AhfStance.setDowned(p, false);
                     helper.assertTrue(StanceLogic.suspended(p), "undowned rider in water not suspended");
@@ -499,7 +624,7 @@ public class StanceGameTest {
         helper.succeed();
     }
 
-    /** Server-side changes are synced once, at the next tick's Pre, stamped with that tick (== its history key). */
+    /** Server-side pose changes are synced at once, stamped with the next tick (== its history key). */
     @GameTest(templateNamespace = Ahf.MOD_ID, template = TEMPLATE)
     public void aMidTickChangeIsStampedWithTheNextTick(GameTestHelper helper) {
         FakePlayer p = spawn(helper, 0.0F);
@@ -507,11 +632,12 @@ public class StanceGameTest {
             StanceState s = AhfStance.get(p);
             long before = s.stamp();
             AhfStance.setDowned(p, true);
-            helper.assertTrue(s.stamp() == before, "flushed mid-tick with stamp " + s.stamp());
+            long sent = s.stamp();
+            helper.assertTrue(sent != before, "not synced at once");
             helper.runAfterDelay(1, () -> {
                 try {
                     long now = helper.getLevel().getGameTime();
-                    helper.assertTrue(s.stamp() == now, "stamp " + s.stamp() + " != the flushing tick " + now);
+                    helper.assertTrue(sent == now, "stamp " + sent + " != the next tick " + now);
                 } finally {
                     p.discard();
                 }

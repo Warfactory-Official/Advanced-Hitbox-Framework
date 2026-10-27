@@ -4,7 +4,7 @@ import com.norwood.ahf.rig.HumanoidRig;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 
-/** AHF posture as a {@link Stance}: UPRIGHT = KNEEL or leaning / stepped STAND; LYING = PRONE, DOWNED, crawl. */
+/** AHF posture as a {@link Stance}: UPRIGHT = KNEEL, DOWNED or leaning / stepped STAND; LYING = PRONE, crawl. */
 public final class PostureStance implements Stance {
 
     public static final PostureStance UPRIGHT = new PostureStance("ahf:upright", true);
@@ -43,7 +43,7 @@ public final class PostureStance implements Stance {
             return false;
         }
         Posture eff = s.effective();
-        boolean posed = upright ? eff == Posture.KNEEL || eff == Posture.STAND
+        boolean posed = upright ? eff == Posture.KNEEL || eff == Posture.DOWNED || eff == Posture.STAND
                 && (s.lean != 0.0F || s.height != 0.0F || s.sideAmount != 0.0F) : eff.lying();
         return posed && !StanceLogic.suspended(p);
     }
@@ -51,6 +51,11 @@ public final class PostureStance implements Stance {
     @Override
     /** Bones + drop/roll already in {@link HumanoidRig#compute}. */
     public void apply(LivingEntity entity, HumanoidRig.LocalRig rig) {
-        HumanoidRig.applyVanillaTilt(entity, rig);
+        apply(entity, rig, 1.0F);
+    }
+
+    @Override
+    public void apply(LivingEntity entity, HumanoidRig.LocalRig rig, float partialTick) {
+        HumanoidRig.applyVanillaTilt(entity, rig, partialTick);
     }
 }

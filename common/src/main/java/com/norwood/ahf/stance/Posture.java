@@ -14,8 +14,13 @@ public enum Posture {
         this.maxLevel = maxLevel;
     }
 
+    /** Prone tilt + SWIMMING shape. DOWNED = upright kneel-wounded (user 2026-10-23). */
     public boolean lying() {
-        return this == PRONE || this == DOWNED;
+        return this == PRONE;
+    }
+
+    public boolean leans() {
+        return this == STAND || this == KNEEL;
     }
 
     public int minLevel() {

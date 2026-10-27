@@ -1,5 +1,8 @@
 package com.norwood.ahf.rig;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.mojang.authlib.properties.Property;
 import com.norwood.ahf.config.AhfConfig;
 import com.norwood.ahf.geometry.Obb;
 import com.norwood.ahf.hook.AhfHooks;
@@ -21,14 +24,28 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.UseAnim;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Matrix3d;
 import org.joml.Matrix4d;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.joml.Vector3d;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class HumanoidRig {
 
     private static final double UNIT = 1.0 / 16.0;
+    /** Server + client threads both compute rigs (integrated server). */
+    private static final ThreadLocal<ArmSolver> SOLVER = ThreadLocal.withInitial(ArmSolver::new);
+    /** Profile {@code textures} value -> slim. */
+    private static final Map<String, Boolean> SLIM = new ConcurrentHashMap<>();
     private static final double MODEL_SCALE = 0.9375;
     private static final double Y_SHIFT = 1.501;
+    /** Vanilla eye minus the drawn neck (head pivot). */
+    private static final double EYE_ABOVE_NECK = 1.62 - MODEL_SCALE * Y_SHIFT;
 
     private static final double DEG2RAD = Math.PI / 180.0;
     private static final double LIMB_FREQ = 0.6662;
@@ -196,15 +213,74 @@ public final class HumanoidRig {
 
     /** Client entities: the render's animation (sampler); server entities: the pose library. */
     public static LocalRig compute(LivingEntity victim) {
-        return compute(victim, victim.level().isClientSide ? animSampler : null);
+        return compute(victim, victim.level().getGameTime());
+    }
+
+    /** {@link #compute(LivingEntity)} for game tick {@code tick} ({@link AhfHooks.HandTargets}). */
+    public static LocalRig compute(LivingEntity victim, long tick) {
+        return compute(victim, victim.level().isClientSide ? animSampler : null, tick);
+    }
+
+    /** {@link #compute(LivingEntity)} at render time {@code partialTick} (stance + lying tilt). */
+    public static LocalRig compute(LivingEntity victim, float partialTick) {
+        return compute(victim, victim.level().isClientSide ? animSampler : null, victim.level().getGameTime(),
+                StancePose.of(victim, partialTick), partialTick, AhfConfig.limbBoxPadding(), true, null);
     }
 
     /** The rig as a dedicated server computes it (pose library, no client animation sampler). */
     public static LocalRig computeServer(LivingEntity victim) {
-        return compute(victim, null);
+        return compute(victim, null, victim.level().getGameTime());
     }
 
-    private static LocalRig compute(LivingEntity victim, AnimSampler sampler) {
+    private static LocalRig compute(LivingEntity victim, AnimSampler sampler, long tick) {
+        return compute(victim, sampler, tick, StancePose.of(victim, 1.0F), 1.0F, AhfConfig.limbBoxPadding(), true, null);
+    }
+
+    /**
+     * Lowest head / torso / leg point (blocks above the feet; unpadded) of {@code victim} posed with {@code stance}
+     * ({@link StancePose#body} floor contact) at render time {@code pt}. Arms out: hand targets re-solve them after (server: onto the gun; clip
+     * arms reached 0.12 below the drawn ones).
+     */
+    public static double floor(LivingEntity victim, StancePose stance, float pt) {
+        LocalRig rig = compute(victim, victim.level().isClientSide ? animSampler : null,
+                victim.level().getGameTime(), stance, pt, 0.0, false, null);
+        double y = Double.POSITIVE_INFINITY;
+        for (LocalRig.Slot slot : LocalRig.SLOTS) {
+            if (slot.limb == HitboxPart.RIGHT_ARM || slot.limb == HitboxPart.LEFT_ARM) {
+                continue;
+            }
+            Obb o = slot.get(rig);
+            y = Math.min(y, o.center().y - Math.abs(o.axisX().y) * o.half().x - Math.abs(o.axisY().y) * o.half().y
+                    - Math.abs(o.axisZ().y) * o.half().z);
+        }
+        return y;
+    }
+
+    /**
+     * Drawn eye height (blocks above the feet, unscaled) of {@code victim} posed with {@code stance} (null => none) at
+     * render time {@code pt}: neck + {@link #EYE_ABOVE_NECK} straight up (gun holds hunch the chest 75 deg, head level).
+     */
+    public static double eye(LivingEntity victim, @Nullable StancePose stance, float pt) {
+        LocalRig rig = compute(victim, victim.level().isClientSide ? animSampler : null, victim.level().getGameTime(),
+                stance, pt, 0.0, false, null);
+        Obb h = rig.head;
+        return h.center().y + h.axisY().y * h.half().y + EYE_ABOVE_NECK;
+    }
+
+    /**
+     * Lowest {@link AhfHooks#heldOutline} point (blocks above the feet) of {@code victim} posed with {@code stance} at
+     * render time {@code pt}, pre-solve arms (the held item hangs on the posed arm); none => +inf.
+     */
+    public static double heldLow(LivingEntity victim, StancePose stance, float pt) {
+        double[] low = {Double.POSITIVE_INFINITY};
+        compute(victim, victim.level().isClientSide ? animSampler : null, victim.level().getGameTime(), stance, pt, 0.0,
+                false, low);
+        return low[0];
+    }
+
+    /** {@code held}: non-null => [0] = lowest {@link AhfHooks#heldOutline} point. */
+    private static LocalRig compute(LivingEntity victim, AnimSampler sampler, long tick, @Nullable StancePose stancePose,
+                                    float pt, double pad, boolean arms, @Nullable double[] held) {
         RigTuning.RigPose pose = resolvePose(victim);
         RigTuning.HandAction hand = resolveHandAction(victim);
 
@@ -215,10 +291,14 @@ public final class HumanoidRig {
         Part rightArm = part(HitboxPart.RIGHT_ARM, pose, hand);
         Part leftArm = part(HitboxPart.LEFT_ARM, pose, hand);
 
-        setupAnim(victim, head, body, rightArm, leftArm, rightLeg, leftLeg);
+        setupAnim(victim, pt, head, body, rightArm, leftArm, rightLeg, leftLeg);
         // PlayerAnimator body transform, PA frame: x, y, z (blocks), pitch, yaw, roll.
         double[] whole = new double[PoseClip.CHANNELS];
+        // PA rightItem, leftItem
+        double[][] items = new double[2][PoseClip.CHANNELS];
         if (sampler != null) {
+            sampleItem(sampler, victim, "rightItem", items[0]);
+            sampleItem(sampler, victim, "leftItem", items[1]);
             overrideBone(sampler, victim, "head", head);
             overrideBone(sampler, victim, "torso", body);
             overrideBone(sampler, victim, "rightArm", rightArm);
@@ -227,9 +307,8 @@ public final class HumanoidRig {
             overrideBone(sampler, victim, "leftLeg", leftLeg);
             sampler.body(victim, whole);
         } else {
-            libraryPose(victim, new Part[]{head, body, rightArm, leftArm, rightLeg, leftLeg}, whole);
+            libraryPose(victim, new Part[]{head, body, rightArm, leftArm, rightLeg, leftLeg}, whole, items);
         }
-        StancePose stancePose = StancePose.of(victim, 1.0F);
         if (stancePose != null) {
             double[] v = new double[PoseClip.CHANNELS];
             stanceBone(stancePose, PoseClip.HEAD, head, v);
@@ -241,7 +320,6 @@ public final class HumanoidRig {
             stancePose.body(whole);
         }
 
-        double pad = AhfConfig.limbBoxPadding();
         LocalRig rig = new LocalRig();
         // Waist bend = PA body + torso bends; upper torso, head and arms turn with it (render: BodyRenderer).
         body.bendAxis += whole[PoseClip.BEND_AXIS];
@@ -254,20 +332,134 @@ public final class HumanoidRig {
         rig.head = toObb(head, head.matrix().mulLocal(upper), null, pad);
         limb(rightArm, upper, pad, rig, LocalRig.Slot.RIGHT_ARM, LocalRig.Slot.RIGHT_FOREARM);
         limb(leftArm, upper, pad, rig, LocalRig.Slot.LEFT_ARM, LocalRig.Slot.LEFT_FOREARM);
+        float[] outline = null;
+        int points = 0;
+        Obb ref = rig.torso;
+        if (held != null && victim instanceof Player p) {
+            outline = new float[AhfHooks.HeldOutline.MAX * 3];
+            points = AhfHooks.heldOutline(p, handFrame(rightArm, leftArm, upper, items, slim(p)), outline);
+        }
+        if (arms && AhfHooks.hasHandTargets() && victim instanceof Player p) {
+            solveArms(p, tick, rightArm, leftArm, upper, items, pad, rig);
+        }
         limb(rightLeg, null, pad, rig, LocalRig.Slot.RIGHT_LEG, LocalRig.Slot.RIGHT_SHIN);
         limb(leftLeg, null, pad, rig, LocalRig.Slot.LEFT_LEG, LocalRig.Slot.LEFT_SHIN);
         applyWhole(rig, whole);
 
         Stance s = AhfStances.active(victim);
         if (s != null) {
-            s.apply(victim, rig);
+            s.apply(victim, rig, pt);
         } else {
-            applyVanillaTilt(victim, rig);
+            applyVanillaTilt(victim, rig, pt);
         }
         if (victim instanceof Player && victim.isCrouching()) {
             lower(rig, StancePose.CROUCH_RENDER_OFFSET * victim.getScale());
         }
+        if (points > 0) {
+            // whole / tilt / crouch transforms are rigid: the torso's maps the outline
+            Matrix3d r = new Matrix3d(axes(rig.torso)).mul(axes(ref).transpose());
+            Vector3d t = vec(rig.torso.center()).sub(r.transform(vec(ref.center())));
+            for (int i = 0; i < points; i++) {
+                Vec3 q = toLocalPoint(new Vec3(outline[i * 3] * 16.0, outline[i * 3 + 1] * 16.0,
+                        outline[i * 3 + 2] * 16.0));
+                held[0] = Math.min(held[0], r.transform(new Vector3d(q.x, q.y, q.z)).add(t).y);
+            }
+        }
         return rig;
+    }
+
+    private static Matrix3d axes(Obb o) {
+        return new Matrix3d(o.axisX().x, o.axisX().y, o.axisX().z, o.axisY().x, o.axisY().y, o.axisY().z,
+                o.axisZ().x, o.axisZ().y, o.axisZ().z);
+    }
+
+    private static Vector3d vec(Vec3 v) {
+        return new Vector3d(v.x, v.y, v.z);
+    }
+
+    private static void sampleItem(AnimSampler sampler, LivingEntity e, String bone, double[] out) {
+        double[] r = sampler.sample(e, bone, out);
+        if (r != null) {
+            System.arraycopy(r, 0, out, 0, out.length);
+        }
+    }
+
+    /**
+     * Arms with an {@link AhfHooks#handTargets} target solved to it ({@link ArmSolver}, vanilla arm landmarks) =>
+     * upper / forearm boxes from the solved frames; no {@code waist} turn (render: solved arms skip it).
+     */
+    private static void solveArms(Player p, long tick, Part rightArm, Part leftArm, Matrix4d waist,
+                                  double[][] items, double pad, LocalRig rig) {
+        boolean slim = slim(p);
+        Vector3f right = new Vector3f();
+        Vector3f left = new Vector3f();
+        int mask = AhfHooks.handTargets(p, handFrame(rightArm, leftArm, waist, items, slim), tick, right, left);
+        if ((mask & 1 << HumanoidArm.RIGHT.ordinal()) != 0) {
+            solveArm(rightArm, false, slim, right, pad, rig, LocalRig.Slot.RIGHT_ARM, LocalRig.Slot.RIGHT_FOREARM);
+        }
+        if ((mask & 1 << HumanoidArm.LEFT.ordinal()) != 0) {
+            solveArm(leftArm, true, slim, left, pad, rig, LocalRig.Slot.LEFT_ARM, LocalRig.Slot.LEFT_FOREARM);
+        }
+    }
+
+    /** Held item frames of the posed (pre-solve) arms. */
+    private static AhfHooks.HandFrame handFrame(Part rightArm, Part leftArm, Matrix4d waist, double[][] items,
+                                                boolean slim) {
+        return new AhfHooks.HandFrame() {
+            @Override
+            public Matrix4f heldItem(HumanoidArm arm, Matrix4f out) {
+                boolean r = arm == HumanoidArm.RIGHT;
+                Part a = r ? rightArm : leftArm;
+                // AHF translateToHand: waist bend, arm (slim: x +-0.5 px), elbow bend
+                Matrix4d m = bent(a, new Matrix4d(waist).translate(slim ? (r ? 0.5 : -0.5) : 0.0, 0.0, 0.0)
+                        .mul(a.matrix()));
+                double[] it = items[r ? 0 : 1];
+                return out.set(new Matrix4d().scaling(1.0 / 16.0).mul(m).scale(16.0))
+                        .rotateX((float) (-Math.PI / 2.0)).rotateY((float) Math.PI)
+                        .translate((r ? 1 : -1) / 16.0F, 0.125F, -0.625F)
+                        .translate((float) it[0] / 16.0F, (float) it[1] / 16.0F, (float) it[2] / 16.0F)
+                        .rotateZYX((float) it[5], (float) it[4], (float) it[3]);
+            }
+
+            @Override
+            public boolean slim() {
+                return slim;
+            }
+        };
+    }
+
+    private static void solveArm(Part a, boolean left, boolean slim, Vector3f target, double pad, LocalRig rig,
+                                 LocalRig.Slot upper, LocalRig.Slot lower) {
+        ArmSolver.Landmarks lm = ArmSolver.Landmarks.vanilla(left, slim);
+        Matrix4f u = new Matrix4f();
+        Matrix4f l = new Matrix4f();
+        SOLVER.get().solve((float) a.x, (float) a.y, (float) a.z, (float) a.xRot, (float) a.yRot, (float) a.zRot, lm,
+                left, target, (float) a.bendAxis, (float) a.bend, u, l);
+        ArmSolver.partFrames(lm, u, l, u, l);
+        upper.set(rig, toObb(a, pxFrame(u), false, pad));
+        lower.set(rig, toObb(a, pxFrame(l), true, pad));
+    }
+
+    /** Part px -> model blocks frame => part px -> model px. */
+    private static Matrix4d pxFrame(Matrix4f blocks) {
+        return new Matrix4d().scaling(16.0).mul(new Matrix4d(blocks)).scale(1.0 / 16.0);
+    }
+
+    /**
+     * Skin model of {@code p}'s profile textures. FIXME no textures property (offline, fake players) => wide; vanilla
+     * picks a default skin, slim for some UUIDs.
+     */
+    private static boolean slim(Player p) {
+        Property tex = p.getGameProfile().getProperties().get("textures").stream().findFirst().orElse(null);
+        if (tex == null) {
+            return false;
+        }
+        return SLIM.computeIfAbsent(tex.value(), v -> {
+            JsonObject skin = JsonParser.parseString(new String(Base64.getDecoder().decode(v), StandardCharsets.UTF_8))
+                    .getAsJsonObject().getAsJsonObject("textures").getAsJsonObject("SKIN");
+            JsonObject meta = skin == null ? null : skin.getAsJsonObject("metadata");
+            return meta != null && meta.has("model") && "slim".equals(meta.get("model").getAsString());
+        });
     }
 
     private static void lower(LocalRig rig, double dy) {
@@ -283,29 +475,32 @@ public final class HumanoidRig {
      * rotation layer. Strides by synced walk position ({@link GunPoses#phased}); other loops at rest frame. Bones = PA
      * order {@code head, torso, rightArm, leftArm, rightLeg, leftLeg}.
      */
-    private static void libraryPose(LivingEntity e, Part[] parts, double[] whole) {
+    private static void libraryPose(LivingEntity e, Part[] parts, double[] whole, double[][] items) {
         GunPoses.Selection sel = GunPoses.select(e, Math.min(GunPoses.walkSpeed(e), 1.0F));
         if (sel == null) {
             return;
         }
-        double[][] v = new double[parts.length][];
+        double[][] v = new double[PoseClip.BONES.length][];
         for (int b = 0; b < parts.length; b++) {
             v[b] = parts[b].channels(new double[PoseClip.CHANNELS]);
         }
+        v[PoseClip.BODY] = whole;
+        v[PoseClip.RIGHT_ITEM] = items[0];
+        v[PoseClip.LEFT_ITEM] = items[1];
         double walk = GunPoses.walkPos(e);
-        layer(sel.set(), sel.lower(), v, whole, walk);
-        layer(sel.set(), sel.upper(), v, whole, walk);
-        layer(sel.set(), GunPoses.EMPTY, v, whole, walk);
-        GunPoses.applyOnce(e, v, whole);
+        layer(sel.set(), sel.lower(), v, walk);
+        layer(sel.set(), sel.upper(), v, walk);
+        layer(sel.set(), GunPoses.EMPTY, v, walk);
+        GunPoses.applyOnce(e, v);
         double lie = GunPoses.lie(e, 1.0F);
         for (int b = 0; b < parts.length; b++) {
-            GunPoses.adjust(e, 1.0F, lie, b, v[b]);
+            GunPoses.adjust(e, 1.0F, lie, b, v[b], null);
             parts[b].set(v[b]);
         }
-        GunPoses.adjust(e, 1.0F, lie, PoseClip.BODY, whole);
+        GunPoses.adjust(e, 1.0F, lie, PoseClip.BODY, whole, v[PoseClip.TORSO]);
     }
 
-    private static void layer(ResourceLocation set, @Nullable String name, double[][] v, double[] whole, double walk) {
+    private static void layer(ResourceLocation set, @Nullable String name, double[][] v, double walk) {
         PoseClip clip = name == null ? null : PoseLibrary.clip(set, name);
         if (clip == null) {
             return;
@@ -313,7 +508,7 @@ public final class HumanoidRig {
         boolean phased = GunPoses.phased(name);
         double t = phased ? GunPoses.phaseTicks(clip, walk) : 0;
         for (int b = 0; b < v.length; b++) {
-            if (!clip.animates(b)) {
+            if (b != PoseClip.BODY && !clip.animates(b)) {
                 continue;
             }
             if (phased) {
@@ -321,11 +516,6 @@ public final class HumanoidRig {
             } else {
                 clip.applyRest(b, v[b]);
             }
-        }
-        if (phased) {
-            clip.applyAt(PoseClip.BODY, t, whole);
-        } else {
-            clip.applyRest(PoseClip.BODY, whole);
         }
     }
 
@@ -383,11 +573,16 @@ public final class HumanoidRig {
      * {@link Stance} replacing it calls this to keep it counted once.
      */
     public static void applyVanillaTilt(LivingEntity e, LocalRig rig) {
+        applyVanillaTilt(e, rig, 1.0F);
+    }
+
+    /** {@link #applyVanillaTilt(LivingEntity, LocalRig)} at render time {@code partialTick}. */
+    public static void applyVanillaTilt(LivingEntity e, LocalRig rig, float partialTick) {
         double angle;
         double shiftY = 0.0;
         double shiftZ = 0.0;
-        float swimAmount = e.getSwimAmount(1.0F);
-        double lie = e.isFallFlying() ? Double.NaN : StancePose.lieOf(e, 1.0F);
+        float swimAmount = e.getSwimAmount(partialTick);
+        double lie = e.isFallFlying() ? Double.NaN : StancePose.lieOf(e, partialTick);
         if (!Double.isNaN(lie)) {
             angle = StancePose.tiltAngle(lie);
             shiftY = StancePose.tiltShiftY(lie);
@@ -435,10 +630,11 @@ public final class HumanoidRig {
         return new Vec3(v.x, v.y * cos - v.z * sin, v.y * sin + v.z * cos);
     }
 
-    private static void setupAnim(LivingEntity e, Part head, Part body, Part rightArm, Part leftArm,
+    private static void setupAnim(LivingEntity e, float pt, Part head, Part body, Part rightArm, Part leftArm,
                                   Part rightLeg, Part leftLeg) {
-        double limbSwing = GunPoses.walkPos(e);
-        double limbSwingAmount = Math.min(GunPoses.walkSpeed(e), 1.0);
+        boolean client = e.level().isClientSide;
+        double limbSwing = client ? e.walkAnimation.position(pt) : GunPoses.walkPos(e);
+        double limbSwingAmount = Math.min(client ? e.walkAnimation.speed(pt) : GunPoses.walkSpeed(e), 1.0);
         double ageInTicks = e.tickCount;
         double netHeadYaw = Mth.wrapDegrees(e.getYHeadRot() - e.yBodyRot);
         double headPitch = e.getXRot();

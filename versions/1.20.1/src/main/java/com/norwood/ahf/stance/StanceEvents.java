@@ -42,7 +42,8 @@ public final class StanceEvents {
         Pose forced = s == null ? null : switch (s.appliedShape) {
             case STAND -> Pose.STANDING;
             case KNEEL -> Pose.CROUCHING;
-            case PRONE, DOWNED -> Pose.SWIMMING;
+            case PRONE -> Pose.SWIMMING;
+            case DOWNED -> Pose.STANDING;
         };
         if (forced == event.getPose()) {
             EntityDimensions shaped = StanceLogic.shape(p, s.appliedShape, s.appliedLevel);

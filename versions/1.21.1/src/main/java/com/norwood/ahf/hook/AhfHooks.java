@@ -2,9 +2,12 @@ package com.norwood.ahf.hook;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -21,6 +24,8 @@ public final class AhfHooks {
     private static volatile AimProvider[] gunAimProgress = new AimProvider[0];
     @SuppressWarnings("unchecked")
     private static volatile Function<LivingEntity, ResourceLocation>[] poseSet = new Function[0];
+    private static volatile HandTargets[] handTargets = new HandTargets[0];
+    private static volatile HeldOutline[] heldOutline = new HeldOutline[0];
 
     private AhfHooks() {
     }
@@ -62,6 +67,77 @@ public final class AhfHooks {
             }
         }
         return null;
+    }
+
+    /**
+     * Rig hand targets: arms solved to them ({@link com.norwood.ahf.rig.ArmSolver}) in place of the posed arms.
+     * First non-zero answer wins.
+     */
+    public static synchronized void addHandTargets(HandTargets provider) {
+        handTargets = append(handTargets, provider);
+    }
+
+    public static boolean hasHandTargets() {
+        return handTargets.length > 0;
+    }
+
+    /** {@link HandTargets#targets} of the first provider with an opinion; 0 => none. */
+    public static int handTargets(LivingEntity e, HandFrame frame, long tick, Vector3f right, Vector3f left) {
+        for (HandTargets t : handTargets) {
+            int mask = t.targets(e, frame, tick, right, left);
+            if (mask != 0) {
+                return mask;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Held item outline: kept above the floor in posture transitions / prone by pitching the arms up
+     * ({@code StancePose} floor contact). First non-zero answer wins.
+     */
+    public static synchronized void addHeldOutline(HeldOutline provider) {
+        heldOutline = append(heldOutline, provider);
+    }
+
+    /** {@link HeldOutline#points} of the first provider with an opinion; 0 => none. */
+    public static int heldOutline(LivingEntity e, HandFrame frame, float[] out) {
+        for (HeldOutline h : heldOutline) {
+            int n = h.points(e, frame, out);
+            if (n != 0) {
+                return n;
+            }
+        }
+        return 0;
+    }
+
+    @FunctionalInterface
+    public interface HeldOutline {
+        /** Points written (x, y, z each), vanilla model space as {@link HandTargets#targets}; at most {@link #MAX}. */
+        int points(LivingEntity e, HandFrame frame, float[] out);
+
+        int MAX = 16;
+    }
+
+    @FunctionalInterface
+    public interface HandTargets {
+        /**
+         * Wrist targets, vanilla model space (blocks, +Y down, -Z forward); bit {@code 1 << arm.ordinal()} per target
+         * written, 0 = no opinion. {@code tick}: game tick the rig is for (history key on capture).
+         */
+        int targets(LivingEntity e, HandFrame frame, long tick, Vector3f right, Vector3f left);
+    }
+
+    /** Held item frame of the rig being computed. */
+    public interface HandFrame {
+        /**
+         * {@code PlayerModel.translateToHand(arm)} (AHF: waist + elbow bends) x {@code ItemInHandLayer} x PlayerAnimator
+         * item channel (posed, pre-solve arm): item -> model space, blocks.
+         */
+        Matrix4f heldItem(HumanoidArm arm, Matrix4f out);
+
+        /** Slim (3 px) arms: skin model of the profile's textures. */
+        boolean slim();
     }
 
     public static boolean isHeldGun(ItemStack stack) {

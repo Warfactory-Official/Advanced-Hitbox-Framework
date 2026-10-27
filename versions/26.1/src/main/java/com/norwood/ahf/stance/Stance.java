@@ -27,4 +27,9 @@ public interface Stance {
     }
 
     void apply(LivingEntity entity, HumanoidRig.LocalRig rig);
+
+    /** {@link #apply(LivingEntity, HumanoidRig.LocalRig)} at render time {@code partialTick}. */
+    default void apply(LivingEntity entity, HumanoidRig.LocalRig rig, float partialTick) {
+        apply(entity, rig);
+    }
 }

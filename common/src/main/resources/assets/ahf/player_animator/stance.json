@@ -8,6 +8,90 @@
         "body": {
           "position": [
             0,
+            -1.29,
+            0
+          ]
+        },
+        "torso": {
+          "rotation": [
+            13.0,
+            0,
+            0
+          ],
+          "position": [
+            0,
+            -0.31,
+            0
+          ]
+        },
+        "head": {
+          "position": [
+            0,
+            -0.31,
+            0
+          ]
+        },
+        "right_arm": {
+          "position": [
+            0,
+            -0.31,
+            -0.45
+          ]
+        },
+        "left_arm": {
+          "position": [
+            0,
+            -0.31,
+            -0.45
+          ]
+        },
+        "right_leg": {
+          "rotation": [
+            -37.8,
+            0,
+            3
+          ],
+          "position": [
+            0,
+            0,
+            2.69
+          ]
+        },
+        "left_leg": {
+          "rotation": [
+            -37.8,
+            0,
+            -3
+          ],
+          "position": [
+            0,
+            0,
+            2.69
+          ]
+        },
+        "right_leg_bend": {
+          "rotation": [
+            75.6,
+            0,
+            0
+          ]
+        },
+        "left_leg_bend": {
+          "rotation": [
+            75.6,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "stand_low": {
+      "loop": true,
+      "animation_length": 0.05,
+      "bones": {
+        "body": {
+          "position": [
+            0,
             -2.26,
             0
           ]
@@ -79,90 +163,6 @@
         "left_leg_bend": {
           "rotation": [
             92.2,
-            0,
-            0
-          ]
-        }
-      }
-    },
-    "stand_low": {
-      "loop": true,
-      "animation_length": 0.05,
-      "bones": {
-        "body": {
-          "position": [
-            0,
-            -3.95,
-            0
-          ]
-        },
-        "torso": {
-          "rotation": [
-            37.2,
-            0,
-            0
-          ],
-          "position": [
-            0,
-            -2.45,
-            0
-          ]
-        },
-        "head": {
-          "position": [
-            0,
-            -2.45,
-            0
-          ]
-        },
-        "right_arm": {
-          "position": [
-            0,
-            -2.45,
-            -1.21
-          ]
-        },
-        "left_arm": {
-          "position": [
-            0,
-            -2.45,
-            -1.21
-          ]
-        },
-        "right_leg": {
-          "rotation": [
-            -58,
-            0,
-            3
-          ],
-          "position": [
-            0,
-            0,
-            7.26
-          ]
-        },
-        "left_leg": {
-          "rotation": [
-            -58,
-            0,
-            -3
-          ],
-          "position": [
-            0,
-            0,
-            7.26
-          ]
-        },
-        "right_leg_bend": {
-          "rotation": [
-            116,
-            0,
-            0
-          ]
-        },
-        "left_leg_bend": {
-          "rotation": [
-            116,
             0,
             0
           ]
@@ -596,7 +596,7 @@
       "bones": {
         "body": {
           "rotation": [
-            17.2,
+            -17.2,
             0,
             0
           ],

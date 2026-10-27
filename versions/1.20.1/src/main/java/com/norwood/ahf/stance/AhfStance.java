@@ -1,7 +1,10 @@
 package com.norwood.ahf.stance;
 
+import com.norwood.ahf.pose.GunPoses;
+import com.norwood.ahf.rig.HumanoidRig;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.BlockHitResult;
@@ -58,6 +61,18 @@ public final class AhfStance {
         return s == null ? Posture.STAND : s.effective();
     }
 
+    /** Effective level; 0 without a stance. */
+    public static int level(LivingEntity e) {
+        StanceState s = e instanceof Player p ? get(p) : null;
+        return s == null ? 0 : s.effectiveLevel();
+    }
+
+    /** Climb clip weight ({@code StancePose}), 0..1: owns every bone at 1. */
+    public static float climb(Player p, float partialTick) {
+        StanceState s = get(p);
+        return s == null ? 0.0F : s.climb(partialTick);
+    }
+
     /** Gates fire, reload, ADS, co-op, stance requests. */
     public static boolean weaponsBlocked(Player p) {
         StanceState s = get(p);
@@ -90,22 +105,44 @@ public final class AhfStance {
         StanceLogic.setLock(p, false, crawl);
     }
 
-    /** World-space eye displacement from lean, clamped against colliders; ZERO without lean. */
+    /**
+     * World-space eye displacement onto the drawn head, clamped against colliders; ZERO without a stance pose or gun
+     * hold (riding: seat layers own the head).
+     */
     public static Vec3 eyeOffset(Player p, float partialTick) {
         Vec3 eye = new Vec3(Mth.lerp(partialTick, p.xo, p.getX()),
                 Mth.lerp(partialTick, p.yo, p.getY()) + p.getEyeHeight(), Mth.lerp(partialTick, p.zo, p.getZ()));
         return eyeOffset(p, partialTick, eye);
     }
 
-    /** {@link #eyeOffset(Player, float)} with the unleaned eye {@code base} already known. */
+    /** {@link #eyeOffset(Player, float)} with the undisplaced eye {@code base} already known. */
     public static Vec3 eyeOffset(Player p, float partialTick, Vec3 base) {
         StancePose pose = StancePose.of(p, partialTick);
-        if (pose == null || pose.roll == 0.0 && pose.shift() == 0.0) {
+        if (pose == null && (p.getVehicle() != null || GunPoses.select(p, 0.0F) == null)) {
             return Vec3.ZERO;
         }
+        double height = base.y - Mth.lerp(partialTick, p.yo, p.getY());
+        if (pose == null) {
+            return clamp(p, base, new Vec3(0.0, drawnEye(p, null, partialTick) - height, 0.0));
+        }
+        // height only: lying head ~1 block ahead of the box
+        Vec3 local = new Vec3(pose.eyeOffsetLocal(height).x, drawnEye(p, pose, partialTick) - height, 0.0);
+        return clamp(p, base, StancePose.localToWorld(local, get(p).bodyYaw(partialTick)));
+    }
+
+    /** {@link HumanoidRig#eye} x scale, per (game time, partial tick). */
+    private static double drawnEye(Player p, @Nullable StancePose pose, float partialTick) {
         StanceState s = get(p);
-        Vec3 off = StancePose.localToWorld(pose.eyeOffsetLocal(p.getEyeHeight()), s.bodyYaw(partialTick));
-        return clamp(p, base, off);
+        long t = p.level().getGameTime();
+        if (s == null) {
+            return HumanoidRig.eye(p, pose, partialTick) * p.getScale();
+        }
+        if (s.eyeTime != t || s.eyePt != partialTick) {
+            s.eyeTime = t;
+            s.eyePt = partialTick;
+            s.eye = HumanoidRig.eye(p, pose, partialTick) * p.getScale();
+        }
+        return s.eye;
     }
 
     private static Vec3 clamp(Player p, Vec3 base, Vec3 off) {

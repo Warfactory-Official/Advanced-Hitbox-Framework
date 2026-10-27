@@ -20,7 +20,7 @@ fun org.gradle.api.artifacts.repositories.MavenArtifactRepository.warfactoryCred
 }
 
 group = "com.norwood"
-version = "1.0.9"
+version = "1.0.10"
 
 prism {
     metadata {
@@ -92,7 +92,7 @@ prism {
                             from(components["java"])
                             groupId = "com.norwood"
                             artifactId = "ahf-1.20.1-forge"
-                            version = "1.0.9-SNAPSHOT"
+                            version = "1.0.10-SNAPSHOT"
                         }
                     }
                     repositories {
@@ -166,7 +166,7 @@ prism {
                             from(components["java"])
                             groupId = "com.norwood"
                             artifactId = "ahf-1.21.1-neoforge"
-                            version = "1.0.9-SNAPSHOT"
+                            version = "1.0.10-SNAPSHOT"
                         }
                     }
                     repositories {
@@ -225,7 +225,7 @@ prism {
                             from(components["java"])
                             groupId = "com.norwood"
                             artifactId = "ahf-26.1-neoforge"
-                            version = "1.0.9-SNAPSHOT"
+                            version = "1.0.10-SNAPSHOT"
                         }
                     }
                     repositories {
