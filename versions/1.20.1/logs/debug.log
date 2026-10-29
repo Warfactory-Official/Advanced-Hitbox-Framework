@@ -1,13 +1,13 @@
-[12Oct2026 23:08:06.562] [Test worker/DEBUG] [io.netty.util.internal.logging.InternalLoggerFactory/]: Using SLF4J as the default logging framework
-[12Oct2026 23:08:06.564] [Test worker/DEBUG] [io.netty.util.ResourceLeakDetector/]: -Dio.netty.leakDetection.level: simple
-[12Oct2026 23:08:06.564] [Test worker/DEBUG] [io.netty.util.ResourceLeakDetector/]: -Dio.netty.leakDetection.targetRecords: 4
-[12Oct2026 23:08:06.571] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: -Dio.netty.noUnsafe: false
-[12Oct2026 23:08:06.571] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: Java version: 17
-[12Oct2026 23:08:06.571] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: sun.misc.Unsafe.theUnsafe: available
-[12Oct2026 23:08:06.571] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: sun.misc.Unsafe.copyMemory: available
-[12Oct2026 23:08:06.572] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: sun.misc.Unsafe.storeFence: available
-[12Oct2026 23:08:06.572] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: java.nio.Buffer.address: available
-[12Oct2026 23:08:06.572] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: direct buffer constructor: unavailable
+[27Oct2026 07:18:23.963] [Test worker/DEBUG] [io.netty.util.internal.logging.InternalLoggerFactory/]: Using SLF4J as the default logging framework
+[27Oct2026 07:18:23.966] [Test worker/DEBUG] [io.netty.util.ResourceLeakDetector/]: -Dio.netty.leakDetection.level: simple
+[27Oct2026 07:18:23.966] [Test worker/DEBUG] [io.netty.util.ResourceLeakDetector/]: -Dio.netty.leakDetection.targetRecords: 4
+[27Oct2026 07:18:23.973] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: -Dio.netty.noUnsafe: false
+[27Oct2026 07:18:23.973] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: Java version: 17
+[27Oct2026 07:18:23.974] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: sun.misc.Unsafe.theUnsafe: available
+[27Oct2026 07:18:23.974] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: sun.misc.Unsafe.copyMemory: available
+[27Oct2026 07:18:23.974] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: sun.misc.Unsafe.storeFence: available
+[27Oct2026 07:18:23.974] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: java.nio.Buffer.address: available
+[27Oct2026 07:18:23.975] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: direct buffer constructor: unavailable
 java.lang.UnsupportedOperationException: Reflective setAccessible(true) disabled
 	at io.netty.util.internal.ReflectionUtil.trySetAccessible(ReflectionUtil.java:31) ~[netty-common-4.1.82.Final.jar:4.1.82.Final]
 	at io.netty.util.internal.PlatformDependent0$5.run(PlatformDependent0.java:288) ~[netty-common-4.1.82.Final.jar:4.1.82.Final]
@@ -105,8 +105,8 @@ java.lang.UnsupportedOperationException: Reflective setAccessible(true) disabled
 	at org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:72) ~[?:?]
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.run(GradleWorkerMain.java:69) ~[gradle-worker.jar:?]
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.main(GradleWorkerMain.java:74) ~[gradle-worker.jar:?]
-[12Oct2026 23:08:06.575] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: java.nio.Bits.unaligned: available, true
-[12Oct2026 23:08:06.575] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: jdk.internal.misc.Unsafe.allocateUninitializedArray(int): unavailable
+[27Oct2026 07:18:23.978] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: java.nio.Bits.unaligned: available, true
+[27Oct2026 07:18:23.978] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: jdk.internal.misc.Unsafe.allocateUninitializedArray(int): unavailable
 java.lang.IllegalAccessException: class io.netty.util.internal.PlatformDependent0$7 cannot access class jdk.internal.misc.Unsafe (in module java.base) because module java.base does not export jdk.internal.misc to unnamed module @3ddf6663
 	at jdk.internal.reflect.Reflection.newIllegalAccessException(Reflection.java:392) ~[?:?]
 	at java.lang.reflect.AccessibleObject.checkAccess(AccessibleObject.java:674) ~[?:?]
@@ -206,23 +206,23 @@ java.lang.IllegalAccessException: class io.netty.util.internal.PlatformDependent
 	at org.gradle.process.internal.worker.child.SystemApplicationClassLoaderWorker.call(SystemApplicationClassLoaderWorker.java:72) ~[?:?]
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.run(GradleWorkerMain.java:69) ~[gradle-worker.jar:?]
 	at worker.org.gradle.process.internal.worker.GradleWorkerMain.main(GradleWorkerMain.java:74) ~[gradle-worker.jar:?]
-[12Oct2026 23:08:06.577] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: java.nio.DirectByteBuffer.<init>(long, int): unavailable
-[12Oct2026 23:08:06.577] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: sun.misc.Unsafe: available
-[12Oct2026 23:08:06.577] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: maxDirectMemory: 536870912 bytes (maybe)
-[12Oct2026 23:08:06.577] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.tmpdir: /tmp (java.io.tmpdir)
-[12Oct2026 23:08:06.578] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.bitMode: 64 (sun.arch.data.model)
-[12Oct2026 23:08:06.578] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.maxDirectMemory: -1 bytes
-[12Oct2026 23:08:06.578] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.uninitializedArrayAllocationThreshold: -1
-[12Oct2026 23:08:06.579] [Test worker/DEBUG] [io.netty.util.internal.CleanerJava9/]: java.nio.ByteBuffer.cleaner(): available
-[12Oct2026 23:08:06.579] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.noPreferDirect: false
-[12Oct2026 23:08:06.583] [Test worker/DEBUG] [io.netty.buffer.AbstractByteBuf/]: -Dio.netty.buffer.checkAccessible: true
-[12Oct2026 23:08:06.583] [Test worker/DEBUG] [io.netty.buffer.AbstractByteBuf/]: -Dio.netty.buffer.checkBounds: true
-[12Oct2026 23:08:06.583] [Test worker/DEBUG] [io.netty.util.ResourceLeakDetectorFactory/]: Loaded default ResourceLeakDetector: io.netty.util.ResourceLeakDetector@cb03411
-[12Oct2026 23:08:06.762] [Test worker/WARN] [AHF/]: [ahf] ahf_hitbox_rig.json: 'HEAD' has 3 values, expected 9 -- ignoring that row
-[12Oct2026 23:08:06.764] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
-[12Oct2026 23:08:06.767] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
-[12Oct2026 23:08:06.769] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
-[12Oct2026 23:08:06.770] [Test worker/ERROR] [AHF/]: [ahf] Failed to load ahf_hitbox_rig.json -- using built-in hitbox geometry
+[27Oct2026 07:18:23.980] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent0/]: java.nio.DirectByteBuffer.<init>(long, int): unavailable
+[27Oct2026 07:18:23.981] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: sun.misc.Unsafe: available
+[27Oct2026 07:18:23.981] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: maxDirectMemory: 536870912 bytes (maybe)
+[27Oct2026 07:18:23.981] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.tmpdir: /tmp (java.io.tmpdir)
+[27Oct2026 07:18:23.981] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.bitMode: 64 (sun.arch.data.model)
+[27Oct2026 07:18:23.981] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.maxDirectMemory: -1 bytes
+[27Oct2026 07:18:23.981] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.uninitializedArrayAllocationThreshold: -1
+[27Oct2026 07:18:23.982] [Test worker/DEBUG] [io.netty.util.internal.CleanerJava9/]: java.nio.ByteBuffer.cleaner(): available
+[27Oct2026 07:18:23.982] [Test worker/DEBUG] [io.netty.util.internal.PlatformDependent/]: -Dio.netty.noPreferDirect: false
+[27Oct2026 07:18:23.986] [Test worker/DEBUG] [io.netty.buffer.AbstractByteBuf/]: -Dio.netty.buffer.checkAccessible: true
+[27Oct2026 07:18:23.986] [Test worker/DEBUG] [io.netty.buffer.AbstractByteBuf/]: -Dio.netty.buffer.checkBounds: true
+[27Oct2026 07:18:23.986] [Test worker/DEBUG] [io.netty.util.ResourceLeakDetectorFactory/]: Loaded default ResourceLeakDetector: io.netty.util.ResourceLeakDetector@58ec7116
+[27Oct2026 07:18:24.158] [Test worker/WARN] [AHF/]: [ahf] ahf_hitbox_rig.json: 'HEAD' has 3 values, expected 9 -- ignoring that row
+[27Oct2026 07:18:24.161] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
+[27Oct2026 07:18:24.174] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
+[27Oct2026 07:18:24.177] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
+[27Oct2026 07:18:24.179] [Test worker/ERROR] [AHF/]: [ahf] Failed to load ahf_hitbox_rig.json -- using built-in hitbox geometry
 com.google.gson.JsonSyntaxException: com.google.gson.stream.MalformedJsonException: Expected ':' at line 1 column 9 path $.this
 	at com.google.gson.Gson.fromJson(Gson.java:1229) ~[gson-2.10.jar:?]
 	at com.google.gson.Gson.fromJson(Gson.java:1124) ~[gson-2.10.jar:?]
@@ -334,4 +334,4 @@ Caused by: com.google.gson.stream.MalformedJsonException: Expected ':' at line 1
 	at com.google.gson.internal.bind.TypeAdapters$34$1.read(TypeAdapters.java:1007) ~[gson-2.10.jar:?]
 	at com.google.gson.Gson.fromJson(Gson.java:1214) ~[gson-2.10.jar:?]
 	... 100 more
-[12Oct2026 23:08:06.778] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
+[27Oct2026 07:18:24.189] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json

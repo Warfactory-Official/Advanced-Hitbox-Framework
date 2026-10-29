@@ -5,6 +5,7 @@ import com.norwood.ahf.network.AhfNetwork;
 import com.norwood.ahf.network.StanceIntentPacket;
 import com.norwood.ahf.network.StanceRollPacket;
 import com.norwood.ahf.stance.AhfStance;
+import com.norwood.ahf.stance.Posture;
 import com.norwood.ahf.stance.StanceLogic;
 import com.norwood.ahf.stance.StanceRequest;
 import com.norwood.ahf.stance.StanceState;
@@ -63,6 +64,8 @@ public final class StanceClient {
             var in = event.getInput();
             in.forwardImpulse = in.leftImpulse = 0.0F;
             in.up = in.down = in.left = in.right = in.jumping = false;
+        } else if (s != null && s.effective() != Posture.STAND || event.getEntity().isCrouching()) {
+            event.getInput().jumping = false;
         }
     }
 

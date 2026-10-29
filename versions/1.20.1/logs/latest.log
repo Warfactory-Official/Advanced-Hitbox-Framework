@@ -1,8 +1,8 @@
-[12Oct2026 23:08:06.762] [Test worker/WARN] [AHF/]: [ahf] ahf_hitbox_rig.json: 'HEAD' has 3 values, expected 9 -- ignoring that row
-[12Oct2026 23:08:06.764] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
-[12Oct2026 23:08:06.767] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
-[12Oct2026 23:08:06.769] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
-[12Oct2026 23:08:06.770] [Test worker/ERROR] [AHF/]: [ahf] Failed to load ahf_hitbox_rig.json -- using built-in hitbox geometry
+[27Oct2026 07:18:24.158] [Test worker/WARN] [AHF/]: [ahf] ahf_hitbox_rig.json: 'HEAD' has 3 values, expected 9 -- ignoring that row
+[27Oct2026 07:18:24.161] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
+[27Oct2026 07:18:24.174] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
+[27Oct2026 07:18:24.177] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
+[27Oct2026 07:18:24.179] [Test worker/ERROR] [AHF/]: [ahf] Failed to load ahf_hitbox_rig.json -- using built-in hitbox geometry
 com.google.gson.JsonSyntaxException: com.google.gson.stream.MalformedJsonException: Expected ':' at line 1 column 9 path $.this
 	at com.google.gson.Gson.fromJson(Gson.java:1229) ~[gson-2.10.jar:?]
 	at com.google.gson.Gson.fromJson(Gson.java:1124) ~[gson-2.10.jar:?]
@@ -114,4 +114,4 @@ Caused by: com.google.gson.stream.MalformedJsonException: Expected ':' at line 1
 	at com.google.gson.internal.bind.TypeAdapters$34$1.read(TypeAdapters.java:1007) ~[gson-2.10.jar:?]
 	at com.google.gson.Gson.fromJson(Gson.java:1214) ~[gson-2.10.jar:?]
 	... 100 more
-[12Oct2026 23:08:06.778] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json
+[27Oct2026 07:18:24.189] [Test worker/INFO] [AHF/]: [ahf] Loaded hitbox rig geometry override from ahf_hitbox_rig.json

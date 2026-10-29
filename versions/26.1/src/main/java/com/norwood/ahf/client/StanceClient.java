@@ -5,6 +5,7 @@ import com.norwood.ahf.mixin.ClientInputAccess;
 import com.norwood.ahf.network.StanceIntentPacket;
 import com.norwood.ahf.network.StanceRollPacket;
 import com.norwood.ahf.stance.AhfStance;
+import com.norwood.ahf.stance.Posture;
 import com.norwood.ahf.stance.StanceLogic;
 import com.norwood.ahf.stance.StanceRequest;
 import com.norwood.ahf.stance.StanceState;
@@ -58,6 +59,10 @@ public final class StanceClient {
             var in = event.getInput();
             ((ClientInputAccess) in).ahf$setMoveVector(Vec2.ZERO);
             in.keyPresses = new Input(false, false, false, false, false, in.keyPresses.shift(), in.keyPresses.sprint());
+        } else if (s != null && s.effective() != Posture.STAND || event.getEntity().isCrouching()) {
+            var in = event.getInput();
+            var k = in.keyPresses;
+            in.keyPresses = new Input(k.forward(), k.backward(), k.left(), k.right(), false, k.shift(), k.sprint());
         }
     }
 
