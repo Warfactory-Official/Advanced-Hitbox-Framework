@@ -57,8 +57,17 @@ public final class HitboxDebugRenderer {
     private HitboxDebugRenderer() {
     }
 
+    /** Reveals hidden hitboxes: dev run, own integrated server, or op on a remote server. */
+    public static boolean allowed() {
+        if (!net.neoforged.fml.loading.FMLLoader.getCurrent().isProduction()) {
+            return true;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        return mc.getSingleplayerServer() != null;
+    }
+
     public static void toggle() {
-        enabled = !enabled;
+        enabled = !enabled && allowed();
     }
 
     public static Style cycleStyle(int dir) {
@@ -70,7 +79,7 @@ public final class HitboxDebugRenderer {
 
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent.AfterTranslucentBlocks event) {
-        if (!enabled) {
+        if (!enabled || !allowed()) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
