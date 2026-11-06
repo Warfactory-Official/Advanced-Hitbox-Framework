@@ -21,7 +21,8 @@ import org.jetbrains.annotations.Nullable;
 public final class StanceLogic {
 
     public static final double LEAN_MAX_DEGREES = 30.0;
-    public static final float LEAN_RATE = 0.2F;
+    /** Half a second from centered to full lean, shared by prediction, hitboxes and remote playback. */
+    public static final float LEAN_RATE = 0.1F;
     public static final float ADS_RATE = 0.25F;
     public static final float BODY_YAW_MAX_LAG = 45.0F;
     public static final float BODY_YAW_MAX_LAG_LYING = 20.0F;
@@ -39,7 +40,7 @@ public final class StanceLogic {
     /** Height / side easing, steps per tick. */
     public static final float STEP_RATE = 0.15F, SIDE_RATE = 0.2F;
     /** Posture transition, per tick: upright pair, into / out of lying ({@link #LIE_RATE} = tilt). */
-    public static final float UPRIGHT_RATE = 1.0F / 5.0F, LIE_RATE = 1.0F / 12.0F;
+    public static final float UPRIGHT_RATE = 1.0F / 8.0F, LIE_RATE = 1.0F / 12.0F;
     /** Climb clip in / out: 4 ticks. */
     static final float CLIMB_RATE = 0.25F;
     /** Box height, eye height by level - minLevel: STAND low / mid / normal, KNEEL low / normal / high, PRONE. */

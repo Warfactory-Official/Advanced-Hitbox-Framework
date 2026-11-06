@@ -16,6 +16,26 @@ class StanceTransitionTest {
         }
     }
 
+    @Test
+    void peekingHasTimeToReadAndReversesWithoutSnapping() {
+        StanceState s = new StanceState();
+        s.leanTarget = 1;
+        ease(s, 5);
+        assertEquals(0.5F, s.lean(1), 1e-6, "halfway after a quarter second");
+        float before = s.lean(1);
+        s.leanTarget = 0;
+        ease(s, 1);
+        assertEquals(before, s.lean(0), 1e-6, "retraction starts at the drawn pose");
+        assertEquals(0.4F, s.lean(1), 1e-6);
+        ease(s, 10);
+        assertEquals(0, s.lean(1));
+        s.posture = Posture.KNEEL;
+        ease(s, 5);
+        assertTrue(s.blend(1) < 1, "stand/kneel must not complete in a single short burst");
+        ease(s, 3);
+        assertEquals(1, s.blend(1));
+    }
+
     /** STAND low -> KNEEL: the new posture starts at its own level (never through kneel_low), blend from 0. */
     @Test
     void postureChangeBlendsFromTheOldPoseAtItsHeight() {
