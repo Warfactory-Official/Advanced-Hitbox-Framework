@@ -111,11 +111,8 @@ public class StanceGameTest {
                 double lateral = eye.subtract(feet).dot(right);
                 helper.assertTrue(Math.abs(lateral - arm * Math.sin(a)) < EPS,
                         "eye lateral " + lateral + " != " + arm * Math.sin(a));
-                helper.assertTrue(Math.abs(HumanoidRig.eye(p, null, 1.0F) - 1.62) < EPS, "unposed rig eye");
-                // feet stay planted: drawn head 0.056 above the body rolled rigidly about its pivot
-                double drawn = HumanoidRig.eye(p, StancePose.of(p, 1.0F), 1.0F);
-                helper.assertTrue(Math.abs(eye.y - feet.y - drawn) < EPS && drawn < 1.62 + arm * (Math.cos(a) - 1.0)
-                        + 0.1, "eye height under lean " + (eye.y - feet.y) + " != drawn " + drawn);
+                helper.assertTrue(Math.abs(eye.y - feet.y - (1.62 + arm * (Math.cos(a) - 1.0))) < EPS,
+                        "eye height under lean " + (eye.y - feet.y));
                 helper.assertTrue(p.getEyeY() == feet.y + p.getEyeHeight(), "getEyeY must ignore lean");
                 helper.assertTrue(p.getEyePosition(1.0F).distanceTo(eye) < EPS, "partial-tick overload disagrees");
             } finally {

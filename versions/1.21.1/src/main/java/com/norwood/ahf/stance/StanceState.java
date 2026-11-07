@@ -70,10 +70,6 @@ public final class StanceState {
 
     float lean;
     float leanO;
-    /** {@code AhfStance.drawnEye} at (game time, partial tick). */
-    long eyeTime = Long.MIN_VALUE;
-    float eyePt;
-    double eye;
     /** Eased {@link #effectiveLevel()} / {@link #effectiveSide()}. */
     float height;
     float heightO;

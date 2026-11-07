@@ -44,8 +44,6 @@ public final class HumanoidRig {
     private static final Map<String, Boolean> SLIM = new ConcurrentHashMap<>();
     private static final double MODEL_SCALE = 0.9375;
     private static final double Y_SHIFT = 1.501;
-    /** Vanilla eye minus the drawn neck (head pivot). */
-    private static final double EYE_ABOVE_NECK = 1.62 - MODEL_SCALE * Y_SHIFT;
 
     private static final double DEG2RAD = Math.PI / 180.0;
     private static final double LIMB_FREQ = 0.6662;
@@ -254,17 +252,6 @@ public final class HumanoidRig {
                     - Math.abs(o.axisZ().y) * o.half().z);
         }
         return y;
-    }
-
-    /**
-     * Drawn eye height (blocks above the feet, unscaled) of {@code victim} posed with {@code stance} (null => none) at
-     * render time {@code pt}: neck + {@link #EYE_ABOVE_NECK} straight up (gun holds hunch the chest 75 deg, head level).
-     */
-    public static double eye(LivingEntity victim, @Nullable StancePose stance, float pt) {
-        LocalRig rig = compute(victim, victim.level().isClientSide ? animSampler : null, victim.level().getGameTime(),
-                stance, pt, 0.0, false, null);
-        Obb h = rig.head;
-        return h.center().y + h.axisY().y * h.half().y + EYE_ABOVE_NECK;
     }
 
     /**
