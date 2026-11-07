@@ -16,6 +16,8 @@
     "CameraMixin",
     "HumanoidArmorLayerMixin",
     "PlayerModelMixin",
+    "PlayerModelRigPoseMixin",
+    "PlayerRendererRigPoseMixin",
     "PlayerRendererTiltMixin"
   ],
   "server": [],

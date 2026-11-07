@@ -26,6 +26,7 @@ public final class AhfHooks {
     private static volatile Function<LivingEntity, ResourceLocation>[] poseSet = new Function[0];
     private static volatile HandTargets[] handTargets = new HandTargets[0];
     private static volatile HeldOutline[] heldOutline = new HeldOutline[0];
+    private static volatile RigPose[] rigPose = new RigPose[0];
 
     private AhfHooks() {
     }
@@ -109,6 +110,49 @@ public final class AhfHooks {
             }
         }
         return 0;
+    }
+
+    /**
+     * Whole-body pose owner (physics): bones replace every animation layer, stance and tilt, rig and render alike.
+     * First non-zero answer wins.
+     */
+    public static synchronized void addRigPose(RigPose provider) {
+        rigPose = append(rigPose, provider);
+    }
+
+    /** A {@link RigPose} owns {@code e} now. */
+    public static boolean rigPosed(LivingEntity e) {
+        for (RigPose p : rigPose) {
+            if (p.active(e)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** {@link RigPose#pose} of the first provider with an opinion; 0 => none. */
+    public static double rigPose(LivingEntity e, float partialTick, double x, double y, double z, double bodyYaw,
+                                 double[][] out) {
+        for (RigPose p : rigPose) {
+            double w = p.pose(e, partialTick, x, y, z, bodyYaw, out);
+            if (w > 0.0) {
+                return w;
+            }
+        }
+        return 0.0;
+    }
+
+    public interface RigPose {
+        boolean active(LivingEntity e);
+
+        /**
+         * @param x       feet position at {@code partialTick}, as the renderer's
+         * @param bodyYaw degrees at {@code partialTick}, as the renderer's
+         * @param out     {@code [PoseClip bone][PoseClip.CHANNELS]}, {@code ModelPart} conventions, bones
+         *                {@code HEAD..LEFT_LEG}; expressed for that position and yaw
+         * @return weight over the normal pose, 0..1; 0 => {@code out} unread
+         */
+        double pose(LivingEntity e, float partialTick, double x, double y, double z, double bodyYaw, double[][] out);
     }
 
     @FunctionalInterface

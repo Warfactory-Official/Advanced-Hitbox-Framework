@@ -2,6 +2,7 @@ package com.norwood.ahf.rig;
 
 import com.norwood.ahf.config.AhfConfig;
 import com.norwood.ahf.geometry.Obb;
+import com.norwood.ahf.hook.AhfHooks;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 
@@ -17,7 +18,7 @@ public final class RigCache {
     }
 
     public static HumanoidRig.LocalRig resolve(LivingEntity victim) {
-        if (!victim.level().isClientSide() && AhfConfig.useClientPose()) {
+        if (!victim.level().isClientSide() && AhfConfig.useClientPose() && !AhfHooks.rigPosed(victim)) {
             HumanoidRig.LocalRig hinted = validHint(victim);
             if (hinted != null) {
                 return hinted;
@@ -31,7 +32,7 @@ public final class RigCache {
      * (the level's time once it advances) => the tick's first live query reuses it.
      */
     public static HumanoidRig.LocalRig capture(LivingEntity victim, long tick) {
-        if (AhfConfig.useClientPose()) {
+        if (AhfConfig.useClientPose() && !AhfHooks.rigPosed(victim)) {
             HumanoidRig.LocalRig hinted = validHint(victim);
             if (hinted != null) {
                 return hinted;

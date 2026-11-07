@@ -40,6 +40,8 @@ public final class BodyRenderer {
     private static BodyMesh wide;
     private static BodyMesh slim;
     private static volatile BendSource bendSource = (model, out) -> false;
+    private static PlayerModel<?> poseModel;
+    private static final float[] POSE_BEND = new float[BENDS * 2];
 
     private static final int J = Joint.VALUES.length;
     private static final Matrix4f[] JOINT = new Matrix4f[J];
@@ -80,6 +82,28 @@ public final class BodyRenderer {
 
     public static void setBendSource(BendSource source) {
         bendSource = source;
+    }
+
+    /** Bends of {@code model}'s current draw from a {@code RigPose}; arm overrides off. Null model => none. */
+    public static void setPoseBends(PlayerModel<?> model, float[] bends) {
+        poseModel = model;
+        if (model != null) {
+            System.arraycopy(bends, 0, POSE_BEND, 0, POSE_BEND.length);
+        }
+    }
+
+    private static boolean bends(PlayerModel<?> model, float[] out) {
+        if (model == poseModel) {
+            System.arraycopy(POSE_BEND, 0, out, 0, POSE_BEND.length);
+            return true;
+        }
+        return bendSource.bends(model, out);
+    }
+
+    /** {@link BendSource} of the draw, {@link #setPoseBends} ignored. */
+    public static void sourceBends(PlayerModel<?> model, float[] out) {
+        java.util.Arrays.fill(out, 0);
+        bendSource.bends(model, out);
     }
 
     public static final ResourceManagerReloadListener RELOAD = BodyRenderer::reload;
@@ -170,7 +194,8 @@ public final class BodyRenderer {
      */
     public static void pose(HumanoidModel<?> model, PlayerModel<?> wearer, BodyMesh mesh) {
         java.util.Arrays.fill(BEND, 0);
-        bendSource.bends(wearer, BEND);
+        bends(wearer, BEND);
+        boolean posed = wearer == poseModel;
         // Torso: lower half rigid, upper half bent about the cube centre; head + arms follow the upper half.
         transform(model.body, M);
         bent(M, mesh, Joint.BODY, Joint.WAIST, WAIST, U, L);
@@ -181,9 +206,9 @@ public final class BodyRenderer {
         transform(model.head, M);
         skin(M.mulLocal(CONJ), mesh, Joint.HEAD, Joint.HEAD);
         limb(model.rightArm, mesh, Joint.RIGHT_ARM, Joint.RIGHT_ELBOW, Joint.RIGHT_FOREARM, RIGHT_ARM,
-                AhfBody.override(HumanoidArm.RIGHT), true);
+                posed ? null : AhfBody.override(HumanoidArm.RIGHT), true);
         limb(model.leftArm, mesh, Joint.LEFT_ARM, Joint.LEFT_ELBOW, Joint.LEFT_FOREARM, LEFT_ARM,
-                AhfBody.override(HumanoidArm.LEFT), true);
+                posed ? null : AhfBody.override(HumanoidArm.LEFT), true);
         limb(model.rightLeg, mesh, Joint.RIGHT_LEG, Joint.RIGHT_KNEE, Joint.RIGHT_SHIN, RIGHT_LEG, null, false);
         limb(model.leftLeg, mesh, Joint.LEFT_LEG, Joint.LEFT_KNEE, Joint.LEFT_SHIN, LEFT_LEG, null, false);
     }
@@ -255,7 +280,7 @@ public final class BodyRenderer {
             return;
         }
         java.util.Arrays.fill(BEND, 0);
-        if (!bendSource.bends(model, BEND) || BEND[WAIST * 2 + 1] == 0) {
+        if (!bends(model, BEND) || BEND[WAIST * 2 + 1] == 0) {
             return;
         }
         transform(model.body, M);
@@ -265,12 +290,12 @@ public final class BodyRenderer {
 
     public static void handPost(PlayerModel<?> model, boolean slimArms, HumanoidArm side, PoseStack stack) {
         BodyMesh mesh = slimArms ? slim : wide;
-        if (!enabled || mesh == null || AhfBody.bendyLib() || AhfBody.override(side) != null) {
+        if (!enabled || mesh == null || AhfBody.bendyLib() || model != poseModel && AhfBody.override(side) != null) {
             return;
         }
         java.util.Arrays.fill(BEND, 0);
         int slot = side == HumanoidArm.RIGHT ? RIGHT_ARM : LEFT_ARM;
-        if (!bendSource.bends(model, BEND) || BEND[slot * 2 + 1] == 0) {
+        if (!bends(model, BEND) || BEND[slot * 2 + 1] == 0) {
             return;
         }
         Joint rigid = side == HumanoidArm.RIGHT ? Joint.RIGHT_ARM : Joint.LEFT_ARM;

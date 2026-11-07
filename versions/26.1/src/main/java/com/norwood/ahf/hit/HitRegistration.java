@@ -13,6 +13,9 @@ import net.minecraft.world.phys.AABB;
 
 public final class HitRegistration {
 
+    /** Body flung over the box. */
+    private static final double RIG_POSE_REACH_V = 0.6;
+
     private HitRegistration() {
     }
 
@@ -35,7 +38,10 @@ public final class HitRegistration {
         Stance activeStance = AhfStances.active(living);
         double h;
         double v;
-        if (activeStance != null) {
+        if (AhfHooks.rigPosed(living)) {
+            h = AhfConfig.stanceEnvelopeReachHorizontal();
+            v = Math.max(AhfConfig.stanceEnvelopeReachVertical(), RIG_POSE_REACH_V);
+        } else if (activeStance != null) {
             h = activeStance.envelopeReachHorizontal();
             v = activeStance.envelopeReachVertical();
         } else {

@@ -27,6 +27,7 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix3d;
 import org.joml.Matrix4d;
 import org.joml.Matrix4f;
+import org.joml.Quaterniond;
 import org.joml.Vector3f;
 import org.joml.Vector3d;
 
@@ -268,6 +269,17 @@ public final class HumanoidRig {
     /** {@code held}: non-null => [0] = lowest {@link AhfHooks#heldOutline} point. */
     private static LocalRig compute(LivingEntity victim, AnimSampler sampler, long tick, @Nullable StancePose stancePose,
                                     float pt, double pad, boolean arms, @Nullable double[] held) {
+        double[][] rigPose = null;
+        double rigWeight = 0.0;
+        if (AhfHooks.rigPosed(victim)) {
+            rigPose = new double[PoseClip.LEFT_LEG + 1][PoseClip.CHANNELS];
+            rigWeight = AhfHooks.rigPose(victim, pt, Mth.lerp(pt, victim.xOld, victim.getX()),
+                    Mth.lerp(pt, victim.yOld, victim.getY()), Mth.lerp(pt, victim.zOld, victim.getZ()),
+                    Mth.rotLerp(pt, victim.yBodyRotO, victim.yBodyRot), rigPose);
+        }
+        if (rigWeight >= 1.0) {
+            return rigPosed(rigPose, pad);
+        }
         RigTuning.RigPose pose = resolvePose(victim);
         RigTuning.HandAction hand = resolveHandAction(victim);
 
@@ -305,6 +317,17 @@ public final class HumanoidRig {
             stanceBone(stancePose, PoseClip.RIGHT_LEG, rightLeg, v);
             stanceBone(stancePose, PoseClip.LEFT_LEG, leftLeg, v);
             stancePose.body(whole);
+        }
+        if (rigWeight > 0.0) {
+            blend(head, rigPose[PoseClip.HEAD], rigWeight);
+            blend(body, rigPose[PoseClip.TORSO], rigWeight);
+            blend(rightArm, rigPose[PoseClip.RIGHT_ARM], rigWeight);
+            blend(leftArm, rigPose[PoseClip.LEFT_ARM], rigWeight);
+            blend(rightLeg, rigPose[PoseClip.RIGHT_LEG], rigWeight);
+            blend(leftLeg, rigPose[PoseClip.LEFT_LEG], rigWeight);
+            for (int i = 0; i < whole.length; i++) {
+                whole[i] *= 1.0 - rigWeight;
+            }
         }
 
         LocalRig rig = new LocalRig();
@@ -353,6 +376,62 @@ public final class HumanoidRig {
             }
         }
         return rig;
+    }
+
+    /** Rig of a {@link AhfHooks.RigPose}: its bones only; the transforms below it are part of the pose. */
+    private static LocalRig rigPosed(double[][] v, double pad) {
+        Part head = part(HitboxPart.HEAD, RigTuning.RigPose.STANDING, RigTuning.HandAction.NONE);
+        Part body = part(HitboxPart.TORSO, RigTuning.RigPose.STANDING, RigTuning.HandAction.NONE);
+        Part rightArm = part(HitboxPart.RIGHT_ARM, RigTuning.RigPose.STANDING, RigTuning.HandAction.NONE);
+        Part leftArm = part(HitboxPart.LEFT_ARM, RigTuning.RigPose.STANDING, RigTuning.HandAction.NONE);
+        Part rightLeg = part(HitboxPart.RIGHT_LEG, RigTuning.RigPose.STANDING, RigTuning.HandAction.NONE);
+        Part leftLeg = part(HitboxPart.LEFT_LEG, RigTuning.RigPose.STANDING, RigTuning.HandAction.NONE);
+        head.set(v[PoseClip.HEAD]);
+        body.set(v[PoseClip.TORSO]);
+        rightArm.set(v[PoseClip.RIGHT_ARM]);
+        leftArm.set(v[PoseClip.LEFT_ARM]);
+        rightLeg.set(v[PoseClip.RIGHT_LEG]);
+        leftLeg.set(v[PoseClip.LEFT_LEG]);
+        LocalRig rig = new LocalRig();
+        Matrix4d torso = body.matrix();
+        Matrix4d chest = bent(body, torso);
+        Matrix4d upper = new Matrix4d(torso).invertAffine().mulLocal(chest);
+        rig.torso = toObb(body, torso, true, pad);
+        rig.chest = toObb(body, chest, false, pad);
+        rig.head = toObb(head, head.matrix().mulLocal(upper), null, pad);
+        limb(rightArm, upper, pad, rig, LocalRig.Slot.RIGHT_ARM, LocalRig.Slot.RIGHT_FOREARM);
+        limb(leftArm, upper, pad, rig, LocalRig.Slot.LEFT_ARM, LocalRig.Slot.LEFT_FOREARM);
+        limb(rightLeg, null, pad, rig, LocalRig.Slot.RIGHT_LEG, LocalRig.Slot.RIGHT_SHIN);
+        limb(leftLeg, null, pad, rig, LocalRig.Slot.LEFT_LEG, LocalRig.Slot.LEFT_SHIN);
+        return rig;
+    }
+
+    /** {@code p} towards {@code to}, weight {@code w}: position + bend lerped, rotation slerped. */
+    private static void blend(Part p, double[] to, double w) {
+        Quaterniond a = new Quaterniond().rotationZYX(p.zRot, p.yRot, p.xRot);
+        Quaterniond b = new Quaterniond().rotationZYX(to[5], to[4], to[3]);
+        Matrix3d m = new Matrix3d().set(a.slerp(b, w));
+        double[] angles = zyx(m);
+        p.x += (to[0] - p.x) * w;
+        p.y += (to[1] - p.y) * w;
+        p.z += (to[2] - p.z) * w;
+        p.xRot = angles[0];
+        p.yRot = angles[1];
+        p.zRot = angles[2];
+        double fromX = Math.cos(p.bendAxis) * p.bend, fromZ = Math.sin(p.bendAxis) * p.bend;
+        double toX = Math.cos(to[PoseClip.BEND_AXIS]) * to[PoseClip.BEND], toZ = Math.sin(to[PoseClip.BEND_AXIS]) * to[PoseClip.BEND];
+        double bx = fromX + (toX - fromX) * w, bz = fromZ + (toZ - fromZ) * w;
+        p.bend = Math.hypot(bx, bz);
+        p.bendAxis = Math.atan2(bz, bx);
+    }
+
+    /** {@code {xRot, yRot, zRot}} of {@code m = Rz Ry Rx}. */
+    public static double[] zyx(Matrix3d m) {
+        double y = Math.asin(Mth.clamp(-m.m02, -1.0, 1.0));
+        if (Math.abs(m.m02) < 0.999999) {
+            return new double[]{Math.atan2(m.m12, m.m22), y, Math.atan2(m.m01, m.m00)};
+        }
+        return new double[]{Math.atan2(-m.m21, m.m11), y, 0.0};
     }
 
     private static Matrix3d axes(Obb o) {
