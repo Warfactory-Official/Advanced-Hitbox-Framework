@@ -5,6 +5,7 @@ import com.norwood.ahf.part.HitboxPart;
 import com.norwood.ahf.pose.PoseClip;
 import com.norwood.ahf.rig.HumanoidRig;
 import io.netty.buffer.Unpooled;
+import java.util.Arrays;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
@@ -210,7 +211,7 @@ class StanceMathTest {
     @Test
     void downedPoseIsTheClip() {
         double[] still = new double[PoseClip.CHANNELS];
-        java.util.Arrays.fill(still, 9.0);
+        Arrays.fill(still, 9.0);
         new StancePose(Posture.DOWNED, 0.0, 0, 0, 0, 0, false).apply(PoseClip.RIGHT_LEG, still);
         double[] idle = new double[PoseClip.CHANNELS];
         for (int ch = 0; ch < PoseClip.CHANNELS; ch++) {

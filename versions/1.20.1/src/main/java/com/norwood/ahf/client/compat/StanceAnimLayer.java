@@ -7,6 +7,7 @@ import dev.kosmx.playerAnim.api.TransformType;
 import dev.kosmx.playerAnim.api.layered.IAnimation;
 import dev.kosmx.playerAnim.core.util.Vec3f;
 import dev.kosmx.playerAnim.minecraftApi.PlayerAnimationFactory;
+import java.util.Arrays;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.resources.ResourceLocation;
 
@@ -86,7 +87,7 @@ public final class StanceAnimLayer implements IAnimation {
         }
         if (part.equals("body")) {
             // layers' value in: transition / climb clips mix absolute (zeroed + value after => off by weight x value)
-            java.util.Arrays.fill(body, 0.0);
+            Arrays.fill(body, 0.0);
             body[o] = value.getX();
             body[o + 1] = value.getY();
             if (o != PoseClip.BEND_AXIS) {
@@ -100,7 +101,7 @@ public final class StanceAnimLayer implements IAnimation {
         if (bone < 0) {
             return value;
         }
-        java.util.Arrays.fill(scratch, 0.0);
+        Arrays.fill(scratch, 0.0);
         scratch[o] = value.getX();
         scratch[o + 1] = value.getY();
         if (o != PoseClip.BEND_AXIS) {

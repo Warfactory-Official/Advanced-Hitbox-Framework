@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -62,7 +63,7 @@ public final class BodyMesh {
         BodyMesh m = new BodyMesh();
         JsonArray nodes = doc.getAsJsonArray("nodes");
         int[] parent = new int[nodes.size()];
-        java.util.Arrays.fill(parent, -1);
+        Arrays.fill(parent, -1);
         for (int i = 0; i < nodes.size(); i++) {
             JsonObject n = nodes.get(i).getAsJsonObject();
             if (n.has("rotation") || n.has("scale") || n.has("matrix")) {

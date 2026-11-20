@@ -13,6 +13,7 @@ import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -86,7 +87,7 @@ public class StanceBench {
             r.run();
             ns[i] = System.nanoTime() - s;
         }
-        java.util.Arrays.sort(ns);
+        Arrays.sort(ns);
         return ns[RUNS / 2];
     }
 }

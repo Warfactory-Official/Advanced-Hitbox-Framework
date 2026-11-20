@@ -1,6 +1,7 @@
 package com.norwood.ahf.rig;
 
 import com.norwood.ahf.part.HitboxPart;
+import java.util.Locale;
 
 public final class RigTuning {
 
@@ -23,7 +24,7 @@ public final class RigTuning {
         }
 
         public String lower() {
-            return name().toLowerCase(java.util.Locale.ROOT);
+            return name().toLowerCase(Locale.ROOT);
         }
     }
 
@@ -42,7 +43,7 @@ public final class RigTuning {
         }
 
         public String lower() {
-            return name().toLowerCase(java.util.Locale.ROOT);
+            return name().toLowerCase(Locale.ROOT);
         }
     }
 
@@ -61,7 +62,7 @@ public final class RigTuning {
         }
 
         public String lower() {
-            return name().toLowerCase(java.util.Locale.ROOT);
+            return name().toLowerCase(Locale.ROOT);
         }
     }
 
@@ -215,7 +216,7 @@ public final class RigTuning {
             if (s == null) {
                 return null;
             }
-            String t = s.toLowerCase(java.util.Locale.ROOT);
+            String t = s.toLowerCase(Locale.ROOT);
             if (t.equals("h") || t.equals("horizontal")) {
                 return HORIZONTAL;
             }
@@ -226,7 +227,7 @@ public final class RigTuning {
         }
 
         public String lower() {
-            return name().toLowerCase(java.util.Locale.ROOT);
+            return name().toLowerCase(Locale.ROOT);
         }
     }
 

@@ -180,8 +180,8 @@ public class StanceGameTest {
                         "torso tilt " + torsoTilt);
                 helper.assertTrue(Math.abs(leaned.rightLeg.axisY().y) > 0.999 && Math.abs(leaned.leftLeg.axisY().y) > 0.999,
                         "legs must stay vertical under lean");
-                helper.assertTrue(StancePose.of(p, 1.0F) != null && com.norwood.ahf.stance.AhfStances.active(p)
-                        == com.norwood.ahf.stance.PostureStance.UPRIGHT, "leaning player not on the upright stance");
+                helper.assertTrue(StancePose.of(p, 1.0F) != null && AhfStances.active(p)
+                        == PostureStance.UPRIGHT, "leaning player not on the upright stance");
                 ServerLevel level = helper.getLevel();
                 Snapshot snap = EntityHistory.snapshot(p, level.getGameTime());
                 helper.assertTrue(snap != null && snap.rig() != null, "no rig in history");

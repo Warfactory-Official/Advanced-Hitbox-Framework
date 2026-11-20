@@ -17,6 +17,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.util.FakePlayer;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -90,7 +91,7 @@ public class LagCompBench {
             r.run();
             ns[i] = System.nanoTime() - s;
         }
-        java.util.Arrays.sort(ns);
+        Arrays.sort(ns);
         return ns[RUNS / 2];
     }
 }

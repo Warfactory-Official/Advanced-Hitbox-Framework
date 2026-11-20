@@ -1,6 +1,7 @@
 package com.norwood.ahf.gametest;
 
 import com.norwood.ahf.Ahf;
+import com.norwood.ahf.config.AhfConfig;
 import com.norwood.ahf.geometry.Obb;
 import com.norwood.ahf.hit.HitboxApi;
 import com.norwood.ahf.part.HitboxPart;
@@ -109,7 +110,7 @@ public class LimbRigGameTest {
         FakePlayer crouched = Bodies.player(helper);
         crouched.setPose(Pose.CROUCHING);
         Obb head = HumanoidRig.compute(crouched).head;
-        double top = head.center().y + head.half().y - com.norwood.ahf.config.AhfConfig.limbBoxPadding();
+        double top = head.center().y + head.half().y - AhfConfig.limbBoxPadding();
         double drawn = 0.9375 * (1.501 + 3.8 / 16.0) - 2.0 / 16.0;
         helper.assertTrue(Math.abs(top - drawn) < 0.005, "crouch head top " + top + " != drawn " + drawn);
         helper.succeed();

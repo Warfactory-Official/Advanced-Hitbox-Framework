@@ -30,6 +30,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
 
 import java.util.List;
+import net.neoforged.fml.loading.FMLEnvironment;
 
 @EventBusSubscriber(modid = Ahf.MOD_ID, bus = EventBusSubscriber.Bus.GAME, value = Dist.CLIENT)
 public final class HitboxDebugRenderer {
@@ -60,7 +61,7 @@ public final class HitboxDebugRenderer {
 
     /** Reveals hidden hitboxes: dev run, own integrated server, or op on a remote server. */
     public static boolean allowed() {
-        if (!net.neoforged.fml.loading.FMLEnvironment.production) {
+        if (!FMLEnvironment.production) {
             return true;
         }
         Minecraft mc = Minecraft.getInstance();

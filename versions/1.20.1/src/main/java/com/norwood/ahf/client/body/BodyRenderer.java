@@ -21,6 +21,7 @@ import org.joml.Vector3f;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.util.Arrays;
 
 /**
  * Draws {@link PlayerModel} as the jointed body GLB instead of its cubes: vanilla part poses, plus PlayerAnimator
@@ -169,7 +170,7 @@ public final class BodyRenderer {
      * = armour => its copied parts).
      */
     public static void pose(HumanoidModel<?> model, PlayerModel<?> wearer, BodyMesh mesh) {
-        java.util.Arrays.fill(BEND, 0);
+        Arrays.fill(BEND, 0);
         bendSource.bends(wearer, BEND);
         // Torso: lower half rigid, upper half bent about the cube centre; head + arms follow the upper half.
         transform(model.body, M);
@@ -254,7 +255,7 @@ public final class BodyRenderer {
         if (!enabled || mesh == null || AhfBody.bendyLib()) {
             return;
         }
-        java.util.Arrays.fill(BEND, 0);
+        Arrays.fill(BEND, 0);
         if (!bendSource.bends(model, BEND) || BEND[WAIST * 2 + 1] == 0) {
             return;
         }
@@ -268,7 +269,7 @@ public final class BodyRenderer {
         if (!enabled || mesh == null || AhfBody.bendyLib() || AhfBody.override(side) != null) {
             return;
         }
-        java.util.Arrays.fill(BEND, 0);
+        Arrays.fill(BEND, 0);
         int slot = side == HumanoidArm.RIGHT ? RIGHT_ARM : LEFT_ARM;
         if (!bendSource.bends(model, BEND) || BEND[slot * 2 + 1] == 0) {
             return;

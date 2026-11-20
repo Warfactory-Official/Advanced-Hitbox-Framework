@@ -70,6 +70,7 @@ prism {
                 }
                 configurations.all {
                     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
+                    resolutionStrategy.cacheDynamicVersionsFor(0, "seconds")
                 }
                 dependencies.add("compileOnly", "com.wf.gemrender:gemrender-1.20.1:0.1.17-SNAPSHOT")
                 dependencies.add("testImplementation", "com.wf.gemrender:gemrender-1.20.1:0.1.17-SNAPSHOT")
@@ -140,9 +141,10 @@ prism {
                 }
                 configurations.all {
                     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
+                    resolutionStrategy.cacheDynamicVersionsFor(0, "seconds")
                 }
-                dependencies.add("compileOnly", "com.wf.gemrender:gemrender-1.21.1:0.1.17-SNAPSHOT")
-                dependencies.add("testImplementation", "com.wf.gemrender:gemrender-1.21.1:0.1.17-SNAPSHOT")
+                dependencies.add("compileOnly", "com.wf.gemrender:gemrender-1.21.1:[0.1.22-SNAPSHOT,1)")
+                dependencies.add("testImplementation", "com.wf.gemrender:gemrender-1.21.1:[0.1.22-SNAPSHOT,1)")
                 val neoForge = extensions.getByType<NeoForgeExtension>()
                 neoForge.addModdingDependenciesTo(gametest)
                 val mod = neoForge.mods.getByName("ahf")

@@ -10,6 +10,7 @@ import com.norwood.ahf.part.HitboxPart;
 import com.norwood.ahf.rig.HumanoidRig;
 import com.norwood.ahf.rig.RigCache;
 import com.norwood.ahf.stance.AhfStances;
+import com.norwood.ahf.stance.Stance;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.LivingEntity;
@@ -414,7 +415,7 @@ public final class HitboxApi {
     }
 
     public static boolean isUprightHumanoid(LivingEntity victim) {
-        com.norwood.ahf.stance.Stance active = AhfStances.active(victim);
+        Stance active = AhfStances.active(victim);
         if (active != null && !active.upright()) {
             return false;
         }

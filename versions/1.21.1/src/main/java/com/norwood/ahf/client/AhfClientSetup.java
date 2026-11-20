@@ -2,6 +2,7 @@ package com.norwood.ahf.client;
 
 import com.norwood.ahf.Ahf;
 import com.norwood.ahf.client.body.BodyRenderer;
+import com.norwood.ahf.client.compat.GemRenderArmorRig;
 import com.norwood.ahf.client.compat.PlayerAnimBends;
 import com.norwood.ahf.client.compat.PlayerAnimSampler;
 import com.norwood.ahf.client.compat.StanceAnimLayer;
@@ -26,7 +27,7 @@ public final class AhfClientSetup {
             event.enqueueWork(PlayerAnimBends::register);
         }
         if (ModList.get().isLoaded("gemrender")) {
-            com.norwood.ahf.client.compat.GemRenderArmorRig.install();
+            GemRenderArmorRig.install();
         }
     }
 

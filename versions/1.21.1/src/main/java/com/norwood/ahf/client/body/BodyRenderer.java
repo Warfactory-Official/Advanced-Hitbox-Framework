@@ -21,10 +21,11 @@ import org.joml.Vector3f;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.util.Arrays;
 
 /**
  * Draws {@link PlayerModel} as the jointed body GLB instead of its cubes: vanilla part poses, plus PlayerAnimator
- * bends (bendy-lib semantics: lower half turned about the cube centre) and {@link AhfBody} arm overrides. Render
+ * bends (bendy-lib semantics: lower half turned about the cube centre) and {@link AhfBody} limb overrides. Render
  * thread only.
  */
 public final class BodyRenderer {
@@ -102,7 +103,7 @@ public final class BodyRenderer {
 
     /** {@link BendSource} of the draw, {@link #setPoseBends} ignored. */
     public static void sourceBends(PlayerModel<?> model, float[] out) {
-        java.util.Arrays.fill(out, 0);
+        Arrays.fill(out, 0);
         bendSource.bends(model, out);
     }
 
@@ -193,7 +194,7 @@ public final class BodyRenderer {
      * = armour => its copied parts).
      */
     public static void pose(HumanoidModel<?> model, PlayerModel<?> wearer, BodyMesh mesh) {
-        java.util.Arrays.fill(BEND, 0);
+        Arrays.fill(BEND, 0);
         bends(wearer, BEND);
         boolean posed = wearer == poseModel;
         // Torso: lower half rigid, upper half bent about the cube centre; head + arms follow the upper half.
@@ -209,8 +210,10 @@ public final class BodyRenderer {
                 posed ? null : AhfBody.override(HumanoidArm.RIGHT), true);
         limb(model.leftArm, mesh, Joint.LEFT_ARM, Joint.LEFT_ELBOW, Joint.LEFT_FOREARM, LEFT_ARM,
                 posed ? null : AhfBody.override(HumanoidArm.LEFT), true);
-        limb(model.rightLeg, mesh, Joint.RIGHT_LEG, Joint.RIGHT_KNEE, Joint.RIGHT_SHIN, RIGHT_LEG, null, false);
-        limb(model.leftLeg, mesh, Joint.LEFT_LEG, Joint.LEFT_KNEE, Joint.LEFT_SHIN, LEFT_LEG, null, false);
+        limb(model.rightLeg, mesh, Joint.RIGHT_LEG, Joint.RIGHT_KNEE, Joint.RIGHT_SHIN, RIGHT_LEG,
+                posed ? null : AhfBody.legOverride(HumanoidArm.RIGHT), false);
+        limb(model.leftLeg, mesh, Joint.LEFT_LEG, Joint.LEFT_KNEE, Joint.LEFT_SHIN, LEFT_LEG,
+                posed ? null : AhfBody.legOverride(HumanoidArm.LEFT), false);
     }
 
     private static void limb(ModelPart part, BodyMesh mesh, Joint rigid, Joint mid, Joint moving, int slot,
@@ -279,7 +282,7 @@ public final class BodyRenderer {
         if (!enabled || mesh == null || AhfBody.bendyLib()) {
             return;
         }
-        java.util.Arrays.fill(BEND, 0);
+        Arrays.fill(BEND, 0);
         if (!bends(model, BEND) || BEND[WAIST * 2 + 1] == 0) {
             return;
         }
@@ -293,7 +296,7 @@ public final class BodyRenderer {
         if (!enabled || mesh == null || AhfBody.bendyLib() || model != poseModel && AhfBody.override(side) != null) {
             return;
         }
-        java.util.Arrays.fill(BEND, 0);
+        Arrays.fill(BEND, 0);
         int slot = side == HumanoidArm.RIGHT ? RIGHT_ARM : LEFT_ARM;
         if (!bends(model, BEND) || BEND[slot * 2 + 1] == 0) {
             return;

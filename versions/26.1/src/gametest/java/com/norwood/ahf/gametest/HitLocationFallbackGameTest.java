@@ -16,6 +16,7 @@ import net.minecraft.world.entity.LivingEntity;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** {@link HitSampler} weighted fallback: no attacker, no projectile => no geometry. */
 public class HitLocationFallbackGameTest {
@@ -118,7 +119,7 @@ public class HitLocationFallbackGameTest {
         DamageSource src = directionless(helper);
         for (HitCategory cat : HitCategory.values()) {
             List<HitboxPart> pierced = HitSampler.pickPierced(v, src, cat, RandomSource.create(3L));
-            helper.assertTrue(!pierced.isEmpty() && pierced.stream().allMatch(java.util.Objects::nonNull),
+            helper.assertTrue(!pierced.isEmpty() && pierced.stream().allMatch(Objects::nonNull),
                     "pickPierced " + cat + ": " + pierced);
         }
         helper.succeed();

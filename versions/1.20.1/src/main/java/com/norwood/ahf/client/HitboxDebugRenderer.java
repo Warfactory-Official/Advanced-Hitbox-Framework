@@ -31,6 +31,7 @@ import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 
 import java.util.List;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 
 @Mod.EventBusSubscriber(modid = Ahf.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class HitboxDebugRenderer {
@@ -61,7 +62,7 @@ public final class HitboxDebugRenderer {
 
     /** Reveals hidden hitboxes: dev run, own integrated server, or op on a remote server. */
     public static boolean allowed() {
-        if (!net.minecraftforge.fml.loading.FMLEnvironment.production) {
+        if (!FMLEnvironment.production) {
             return true;
         }
         Minecraft mc = Minecraft.getInstance();

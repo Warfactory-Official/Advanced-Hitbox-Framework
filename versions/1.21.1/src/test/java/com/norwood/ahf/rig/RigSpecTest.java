@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -210,7 +211,7 @@ class RigSpecTest {
         void aPartialFileOnlyReplacesTheRowsItNames(@TempDir Path dir) throws Exception {
             double[] head = HumanoidRig.defaultSpec().base[HitboxPart.HEAD.ordinal()];
             head[SX] = 11.0;
-            String partial = "{ \"base\": { \"HEAD\": " + java.util.Arrays.toString(head) + " } }";
+            String partial = "{ \"base\": { \"HEAD\": " + Arrays.toString(head) + " } }";
             Files.writeString(dir.resolve(RigSpecIO.FILE_NAME), partial, StandardCharsets.UTF_8);
             RigSpecIO.reload(dir);
 
@@ -236,7 +237,7 @@ class RigSpecTest {
             torso[SX] = 7.5;
             String mixed = "{ \"base\": {"
                     + " \"HEAD\": [1.0, 2.0, 3.0],"
-                    + " \"TORSO\": " + java.util.Arrays.toString(torso)
+                    + " \"TORSO\": " + Arrays.toString(torso)
                     + " } }";
             Files.writeString(dir.resolve(RigSpecIO.FILE_NAME), mixed, StandardCharsets.UTF_8);
             RigSpecIO.reload(dir);

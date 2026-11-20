@@ -1,6 +1,7 @@
 package com.norwood.ahf.client;
 
 import com.norwood.ahf.Ahf;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
@@ -47,7 +48,7 @@ public final class AhfClientEvents {
         event.setCanceled(true);
     }
 
-    private static void drain(net.minecraft.client.KeyMapping key) {
+    private static void drain(KeyMapping key) {
         while (key.consumeClick()) {
         }
     }
